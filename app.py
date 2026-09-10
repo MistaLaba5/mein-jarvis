@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import base64
 import streamlit as st
 import streamlit.components.v1 as components
 from groq import Groq
@@ -40,16 +41,16 @@ Du bist J.A.R.V.I.S., die hochentwickelte KI von Sir.
 3. Wenn der Nutzer nach Uhrzeit, Protokollen oder SpielerPlus fragt, rufe sofort die passenden Tools auf.
 """
 
-# Session States initialisieren
+# State-Initialisierung
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-if "follow_up_active" not in st.session_state:
-    st.session_state.follow_up_active = False
+if "latest_audio_b64" not in st.session_state:
+    st.session_state.latest_audio_b64 = ""
 
-# Seitenleiste: Einstellungen
+# Seitenleiste
 with st.sidebar:
-    st.header("Audio-Einstellungen")
+    st.header("Audio & Sensoren")
     enable_wakeword = st.toggle("🎤 'Hey Jarvis' lauschen", value=False)
     enable_tts = st.toggle("🔊 Sprachausgabe erlauben", value=False)
     voice_option = st.selectbox("Jarvis-Stimme:", ["Deutsch (Conrad)", "Englisch (Ryan)"])
@@ -64,16 +65,8 @@ with st.sidebar:
 
     if st.button("Chat zurücksetzen"):
         st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        st.session_state.follow_up_active = False
+        st.session_state.latest_audio_b64 = ""
         st.rerun()
-
-# Chat-Verlauf anzeigen
-for msg in st.session_state.messages[1:]:
-    role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else None)
-    content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
-    if role in ["user", "assistant"] and content:
-        with st.chat_message(role):
-            st.write(content)
 
 async def generate_edge_speech(text: str, voice_name: str) -> bytes:
     communicate = edge_tts.Communicate(text, voice_name)
@@ -83,20 +76,8 @@ async def generate_edge_speech(text: str, voice_name: str) -> bytes:
             audio_data += chunk["data"]
     return audio_data
 
-def speak_text(text: str):
-    try:
-        voice = "de-DE-ConradNeural" if "Deutsch" in voice_option else "en-GB-RyanNeural"
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        audio_bytes = loop.run_until_complete(generate_edge_speech(text, voice))
-        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
-    except Exception as e:
-        st.caption(f"Audioausgabe nicht verfügbar: {e}")
-
 def process_query(user_text, is_voice=False):
     st.session_state.messages.append({"role": "user", "content": user_text})
-    with st.chat_message("user"):
-        st.write(user_text)
 
     try:
         response = client.chat.completions.create(
@@ -154,24 +135,35 @@ def process_query(user_text, is_voice=False):
             reply = response_message.content
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
-        with st.chat_message("assistant"):
-            st.write(reply)
 
-        # Sprachausgabe und Follow-up nur bei Spracheingabe
+        # Nur bei Spracheingabe Audio erzeugen
         if is_voice and enable_tts and reply:
-            speak_text(reply)
-            st.session_state.follow_up_active = True
+            voice = "de-DE-ConradNeural" if "Deutsch" in voice_option else "en-GB-RyanNeural"
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            audio_bytes = loop.run_until_complete(generate_edge_speech(reply, voice))
+            st.session_state.latest_audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
         else:
-            st.session_state.follow_up_active = False
+            st.session_state.latest_audio_b64 = ""
 
     except Exception as e:
         st.error(f"Fehler bei Groq-Anfrage ({MODEL_NAME}): {e}")
 
-# Prüfen, ob der Follow-up Modus getriggert werden soll
-start_follow_up = st.session_state.follow_up_active
-# Nach der Auswertung zurücksetzen, damit es nicht endlos läuft
-st.session_state.follow_up_active = False
+# 1. Eingabe VOR dem Rendern des HUDs abfangen
+chat_text = st.chat_input("Befehl eingeben, Sir...")
 
+if chat_text:
+    if chat_text.startswith("[VOICE]"):
+        clean_text = chat_text.replace("[VOICE]", "").strip()
+        process_query(clean_text, is_voice=True)
+    else:
+        process_query(chat_text, is_voice=False)
+
+# 2. Audio-Daten für diesen Durchlauf holen und State leeren
+audio_payload = st.session_state.latest_audio_b64
+st.session_state.latest_audio_b64 = ""
+
+# 3. HUD-Komponente rendern
 hud_html = f"""
 <div id="jarvis-hud" style="
     display: flex;
@@ -199,7 +191,7 @@ hud_html = f"""
 
 <script>
 const active = {str(enable_wakeword).lower()};
-const shouldFollowUp = {str(start_follow_up).lower()};
+const audioB64 = "{audio_payload}";
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 if (active && SpeechRecognition) {{
@@ -213,11 +205,12 @@ if (active && SpeechRecognition) {{
     const hudText = document.getElementById('hud-text');
 
     let isListeningCommand = false;
+    let isSpeaking = false;
     let silenceTimeout = null;
     let followUpTimer = null;
     let fullCommand = "";
 
-    function setStatusStandby() {{
+    function setStandby() {{
         isListeningCommand = false;
         dot.style.backgroundColor = '#10b981';
         dot.style.boxShadow = '0 0 8px #10b981';
@@ -225,41 +218,46 @@ if (active && SpeechRecognition) {{
         hudText.innerText = "";
     }}
 
-    function startFollowUpWindow() {{
+    function startFollowUp() {{
         isListeningCommand = true;
         dot.style.backgroundColor = '#38bdf8';
         dot.style.boxShadow = '0 0 12px #38bdf8';
         status.innerText = "Im Gespräch: Höre zu (ohne Wake-Word)...";
 
-        // Nach 6 Sekunden Stille schaltet sich das aktive Zuhören ab
         clearTimeout(followUpTimer);
         followUpTimer = setTimeout(() => {{
             if (isListeningCommand && fullCommand.trim().length === 0) {{
-                setStatusStandby();
+                setStandby();
             }}
-        }}, 6000);
+        }}, 7000); // 7 Sekunden Reaktionszeit
     }}
 
-    // Prüfen, ob Jarvis gerade noch über Audio spricht
-    const parentDoc = window.parent.document;
-    const audios = parentDoc.querySelectorAll('audio');
-    const lastAudio = audios.length > 0 ? audios[audios.length - 1] : null;
+    // Wenn Jarvis eine Sprachantwort mitliefert: Abspielen und Mikrofon stummschalten
+    if (audioB64.length > 0) {{
+        isSpeaking = true;
+        dot.style.backgroundColor = '#a855f7';
+        dot.style.boxShadow = '0 0 10px #a855f7';
+        status.innerText = "Jarvis spricht...";
 
-    if (shouldFollowUp) {{
-        if (lastAudio && !lastAudio.ended && !lastAudio.paused) {{
-            // Warten bis Sprachausgabe beendet ist, bevor zugehört wird
-            status.innerText = "Jarvis antwortet...";
-            lastAudio.onended = () => {{
-                startFollowUpWindow();
-            }};
-        }} else {{
-            startFollowUpWindow();
-        }}
+        try {{ rec.stop(); }} catch(e) {{}}
+
+        const audio = new Audio("data:audio/mp3;base64," + audioB64);
+        audio.play().catch(() => {{
+            isSpeaking = false;
+            startFollowUp();
+        }});
+
+        audio.onended = () => {{
+            isSpeaking = false;
+            try {{ rec.start(); }} catch(e) {{}}
+            startFollowUp();
+        }};
+    }} else {{
+        try {{ rec.start(); }} catch(e) {{}}
     }}
 
     rec.onresult = (event) => {{
-        // Falls Jarvis noch spricht: ignorieren
-        if (lastAudio && !lastAudio.ended && !lastAudio.paused) return;
+        if (isSpeaking) return;
 
         let interim = "";
         let final = "";
@@ -272,7 +270,7 @@ if (active && SpeechRecognition) {{
         let raw = (final || interim).trim();
         let lower = raw.toLowerCase();
 
-        // 1. Wake-Word Erkennung (falls nicht schon im Gespräch)
+        // Wake-Word abfangen, falls noch nicht im Befehlsmodus
         if (!isListeningCommand && (lower.includes("hey jarvis") || lower.includes("jarvis"))) {{
             isListeningCommand = true;
             dot.style.backgroundColor = '#38bdf8';
@@ -281,19 +279,20 @@ if (active && SpeechRecognition) {{
             raw = raw.replace(/hey jarvis/gi, "").replace(/jarvis/gi, "").trim();
         }}
 
-        // 2. Befehl erfassen
         if (isListeningCommand) {{
-            // Follow-up Timer stoppen, da der Nutzer spricht
             clearTimeout(followUpTimer);
 
-            if (raw.length > 0) {{
-                fullCommand = raw;
+            // Optionales erneutes Wake-Word aus Gewohnheit abstreifen
+            let cleanCmd = raw.replace(/^hey jarvis/gi, "").replace(/^jarvis/gi, "").trim();
+
+            if (cleanCmd.length > 0) {{
+                fullCommand = cleanCmd;
                 hudText.innerText = '"' + fullCommand + '"';
 
-                // Nach 1.1s Sprechpause absenden
                 clearTimeout(silenceTimeout);
                 silenceTimeout = setTimeout(() => {{
                     if (fullCommand.trim().length > 0) {{
+                        const parentDoc = window.parent.document;
                         const ta = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
                         if (ta) {{
                             const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
@@ -321,25 +320,20 @@ if (active && SpeechRecognition) {{
     }};
 
     rec.onend = () => {{
-        if (active) {{
+        if (active && !isSpeaking) {{
             try {{ rec.start(); }} catch(e) {{}}
         }}
     }};
-
-    try {{ rec.start(); }} catch(e) {{}}
 }}
 </script>
 """
 
 components.html(hud_html, height=52)
 
-# Chat-Eingabe
-chat_text = st.chat_input("Befehl eingeben, Sir...")
-
-if chat_text:
-    if chat_text.startswith("[VOICE]"):
-        clean_text = chat_text.replace("[VOICE]", "").strip()
-        process_query(clean_text, is_voice=True)
-    else:
-        # Getippte Frage: Antwort erfolgt rein textbasiert
-        process_query(chat_text, is_voice=False)
+# 4. Chat-Verlauf rendern
+for msg in st.session_state.messages[1:]:
+    role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else None)
+    content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
+    if role in ["user", "assistant"] and content:
+        with st.chat_message(role):
+            st.write(content)
