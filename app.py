@@ -6,6 +6,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from groq import Groq
 import edge_tts
+from gradio_client import Client
 from jarvis_tools import TOOLS_SCHEMA, TOOL_MAP, get_all_memories
 
 st.set_page_config(page_title="J.A.R.V.I.S.", page_icon="🤖", layout="centered")
@@ -64,7 +65,6 @@ Dauerhaftes Gedächtnis über Sir:
 {mem_text}
 """
 
-# State-Initialisierung
 if "messages" not in st.session_state:
     saved = load_chat_history()
     if saved:
@@ -94,7 +94,14 @@ with st.sidebar:
         enable_wakeword = st.toggle("🎤 'Hey Jarvis' lauschen", value=False)
         enable_tts = st.toggle("🔊 Sprachausgabe erlauben", value=False)
 
-    voice_option = st.selectbox("Jarvis-Stimme:", ["Deutsch (Conrad)", "Englisch (Ryan)"])
+    voice_option = st.selectbox(
+        "Jarvis-Stimme:",
+        [
+            "Kokoro-82M (Original Jarvis - BM George)",
+            "Deutsch (Conrad - Edge)",
+            "Englisch (Ryan - Edge)"
+        ]
+    )
 
     st.divider()
     st.header("Langzeitgedächtnis")
@@ -121,7 +128,7 @@ with st.sidebar:
         st.session_state.sleep_mode = False
         st.rerun()
 
-async def generate_edge_speech(text: str, voice_name: str) -> bytes:
+async def generate_edge_fallback(text: str, voice_name: str) -> bytes:
     communicate = edge_tts.Communicate(text, voice_name)
     audio_data = b""
     async for chunk in communicate.stream():
@@ -129,8 +136,27 @@ async def generate_edge_speech(text: str, voice_name: str) -> bytes:
             audio_data += chunk["data"]
     return audio_data
 
+def generate_voice_audio(text: str) -> bytes:
+    """Erzeugt Sprache via Kokoro-82M oder Edge-TTS Fallback."""
+    if "Kokoro" in voice_option:
+        try:
+            hf_token = st.secrets.get("HF_TOKEN")
+            hf_client = Client("hexgrad/Kokoro-82M", hf_token=hf_token)
+            result = hf_client.predict(text=text, voice="bm_george")
+            with open(result, "rb") as f:
+                return f.read()
+        except Exception:
+            # Fallback falls Hugging Face Space schläft
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            return loop.run_until_complete(generate_edge_fallback(text, "en-GB-RyanNeural"))
+    else:
+        voice = "de-DE-ConradNeural" if "Deutsch" in voice_option else "en-GB-RyanNeural"
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        return loop.run_until_complete(generate_edge_fallback(text, voice))
+
 def process_query(user_text, is_voice=False):
-    # Wenn der Nutzer ihn per Text aufwecken will
     if st.session_state.sleep_mode:
         if any(w in user_text.lower() for w in ["aufwachen", "wake up", "hallo", "guten morgen", "online"]):
             st.session_state.sleep_mode = False
@@ -200,16 +226,11 @@ def process_query(user_text, is_voice=False):
         st.session_state.messages.append({"role": "assistant", "content": reply})
         save_chat_history(st.session_state.messages)
 
-        # Wenn Ruhemodus ausgelöst wurde: State umschalten
         if triggered_sleep:
             st.session_state.sleep_mode = True
 
-        # Letzte Antwort vertonen (auch die Verabschiedung in den Ruhemodus)
         if (is_voice or triggered_sleep) and (enable_tts or triggered_sleep) and reply:
-            voice = "de-DE-ConradNeural" if "Deutsch" in voice_option else "en-GB-RyanNeural"
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            audio_bytes = loop.run_until_complete(generate_edge_speech(reply, voice))
+            audio_bytes = generate_voice_audio(reply)
             st.session_state.latest_audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
         else:
             st.session_state.latest_audio_b64 = ""
@@ -217,7 +238,6 @@ def process_query(user_text, is_voice=False):
     except Exception as e:
         st.error(f"Fehler bei Groq-Anfrage ({MODEL_NAME}): {e}")
 
-# Chat-Eingabe
 chat_text = st.chat_input("Befehl eingeben, Sir...")
 
 if chat_text:
@@ -231,7 +251,6 @@ audio_payload = st.session_state.latest_audio_b64
 st.session_state.latest_audio_b64 = ""
 is_sleep = st.session_state.sleep_mode
 
-# HUD Komponente
 hud_html = f"""
 <div id="jarvis-hud" style="
     display: flex;
@@ -302,7 +321,6 @@ if (SpeechRecognition) {{
         }}, 7000);
     }}
 
-    // Wenn Audio vorhanden ist: Abspielen
     if (audioB64.length > 0) {{
         isSpeaking = true;
         dot.style.backgroundColor = '#a855f7';
@@ -402,7 +420,6 @@ if (SpeechRecognition) {{
 
 components.html(hud_html, height=52)
 
-# Chat-Verlauf rendern
 for msg in st.session_state.messages[1:]:
     role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else None)
     content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
