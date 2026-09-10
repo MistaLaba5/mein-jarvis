@@ -5,7 +5,7 @@ from groq import Groq
 from jarvis_tools import TOOLS_SCHEMA, TOOL_MAP
 
 st.set_page_config(page_title="J.A.R.V.I.S.", page_icon="🤖", layout="centered")
-st.title("J.A.R.V.I.S. // Online Core")
+st.title("J.A.R.V.I.S.")
 st.caption("Systemstatus: Online. Bereit für Ihre Anweisungen, Sir.")
 
 # Groq API-Key laden
