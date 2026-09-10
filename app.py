@@ -57,8 +57,8 @@ def build_system_prompt():
     
     return f"""Du bist J.A.R.V.I.S., die hochentwickelte KI von Sir.
 1. Sprich den Nutzer stets diskret und loyal mit 'Sir' an.
-2. SPRACHE: Antworte IMMER exakt in der Sprache, in der Sir dich anspricht. Wenn Sir Englisch spricht, antworte auf Englisch. Wenn Sir Deutsch spricht, antworte auf Deutsch.
-3. Sei präzise, trocken-humorvoll und halte dich extrem kurz (1-2 Sätze).
+2. SPRACHE: Antworte IMMER exakt in der Sprache, in der Sir dich anspricht. Spricht Sir Englisch, antworte auf Englisch. Spricht Sir Deutsch, antworte auf Deutsch.
+3. Sei präzise, loyal, trocken-humorvoll und halte dich extrem kurz (1-2 Sätze).
 4. Wenn Sir dir befiehlt schlafen zu gehen, leise zu sein oder den Ruhemodus zu aktivieren, rufe SOFORT 'run_protocol' mit protocol_name='ruhemodus' auf.
 5. Wenn Sir dir Fakten über sich mitteilt, rufe sofort 'save_memory' auf.
 
@@ -124,7 +124,6 @@ with st.sidebar:
         st.rerun()
 
 def detect_language(text: str) -> str:
-    """Erkennt schnell, ob der generierte Text Deutsch oder Englisch ist."""
     lower = text.lower()
     if any(c in lower for c in "äöüß"):
         return "de"
@@ -135,7 +134,7 @@ def detect_language(text: str) -> str:
     en_score = len(words & english_markers)
     return "en" if en_score > de_score else "de"
 
-async def generate_edge_voice(text: str, voice_name: str, rate: str = "-4%", pitch: str = "-5Hz") -> bytes:
+async def generate_edge_voice(text: str, voice_name: str, rate: str = "-3%", pitch: str = "-4Hz") -> bytes:
     communicate = edge_tts.Communicate(text=text, voice=voice_name, rate=rate, pitch=pitch)
     audio_data = b""
     async for chunk in communicate.stream():
@@ -144,25 +143,44 @@ async def generate_edge_voice(text: str, voice_name: str, rate: str = "-4%", pit
     return audio_data
 
 def generate_voice_audio(text: str) -> bytes:
-    """Wählt automatisch die passende Stimme für Deutsch oder Englisch."""
+    """Erzeugt Sprache über XTTS-v2 (Klon), Kokoro (Englisch) oder Edge-TTS Fallback."""
     lang = detect_language(text)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    hf_token = st.secrets.get("HF_TOKEN")
 
-    if lang == "en":
-        # Echtes britisches Kokoro-Modell für englische Antworten
+    if lang == "de":
+        sample_path = "jarvis_sample.wav"
+        # Falls die Tonspur auf GitHub hinterlegt ist: XTTS Klon nutzen
+        if os.path.exists(sample_path) and hf_token:
+            try:
+                xtts_client = Client("coqui/xtts", hf_token=hf_token)
+                result = xtts_client.predict(
+                    prompt=text,
+                    language="de",
+                    audio_file_pth=sample_path,
+                    mic_file_pth=None,
+                    use_mic=False,
+                    cleanup_voice=False,
+                    no_lang_auto_detect=False,
+                    agree=True,
+                    api_name="/predict"
+                )
+                with open(result, "rb") as f:
+                    return f.read()
+            except Exception:
+                return loop.run_until_complete(generate_edge_voice(text, "de-DE-KillianNeural"))
+        else:
+            return loop.run_until_complete(generate_edge_voice(text, "de-DE-KillianNeural"))
+    else:
+        # Englisches Original via Kokoro-82M
         try:
-            hf_token = st.secrets.get("HF_TOKEN")
             hf_client = Client("hexgrad/Kokoro-82M", hf_token=hf_token)
             result = hf_client.predict(text=text, voice="bm_george")
             with open(result, "rb") as f:
                 return f.read()
         except Exception:
-            # Fallback falls Hugging Face Space schläft
             return loop.run_until_complete(generate_edge_voice(text, "en-GB-RyanNeural"))
-    else:
-        # Perfekt artikuliertes, tiefes Deutsch ohne englischen Akzent
-        return loop.run_until_complete(generate_edge_voice(text, "de-DE-KillianNeural", rate="-3%", pitch="-4Hz"))
 
 def process_query(user_text, is_voice=False):
     if st.session_state.sleep_mode:
