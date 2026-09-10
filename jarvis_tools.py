@@ -72,7 +72,6 @@ def create_calendar_event(summary: str, start_time: str, end_time: str = None, d
         return "Kalender-Schnittstelle nicht konfiguriert. Prüfe Secrets in Streamlit."
 
     try:
-        # Falls keine Endzeit angegeben ist, Standarddauer 1 Stunde ansetzen
         if not end_time:
             start_dt = datetime.fromisoformat(start_time)
             end_time = (start_dt + timedelta(hours=1)).isoformat()
@@ -84,7 +83,7 @@ def create_calendar_event(summary: str, start_time: str, end_time: str = None, d
             "end": {"dateTime": end_time, "timeZone": "Europe/Berlin"},
         }
 
-        created = service.events().insert(calendarId=cal_id, body=event_body).execute()
+        service.events().insert(calendarId=cal_id, body=event_body).execute()
         return f"Termin '{summary}' am {start_time} erfolgreich in Ihren Google Kalender eingetragen."
     except Exception as e:
         return f"Fehler beim Erstellen des Termins: {e}"
@@ -226,11 +225,14 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "run_protocol",
-            "description": "Führt ein Jarvis-Protokoll aus.",
+            "description": "Führt ein Jarvis-Protokoll aus. Verfügbare Protokolle: 'fokus', 'party', 'ruhemodus' (schaltet Sensoren und Mikrofon ab und versetzt Jarvis in den Ruhezustand).",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "protocol_name": {"type": "string"}
+                    "protocol_name": {
+                        "type": "string",
+                        "description": "Name des Protokolls: 'fokus', 'party' oder 'ruhemodus'.",
+                    }
                 },
                 "required": ["protocol_name"],
             },
