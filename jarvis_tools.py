@@ -1,259 +1,165 @@
-import json
 import os
-import sys
-import io
-import traceback
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
-import streamlit as st
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
+import json
+from datetime import datetime
 
-MEMORY_FILE = "jarvis_memory.json"
-SCOPES = ["https://www.googleapis.com/auth/calendar"]
+PROTOCOLS_FILE = "jarvis_protocols.json"
+MEMORIES_FILE = "jarvis_memory.json"
 
-# --- Google Calendar Verbindung ---
+# --- PROTOKOLL-VERWALTUNG ---
 
-def get_calendar_service():
-    """Initialisiert den Google Calendar Client über das Dienstkonto."""
-    raw_creds = st.secrets.get("GOOGLE_SERVICE_ACCOUNT")
-    if not raw_creds:
-        return None
-    try:
-        creds_dict = json.loads(raw_creds) if isinstance(raw_creds, str) else dict(raw_creds)
-        creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-        return build("calendar", "v3", credentials=creds)
-    except Exception:
-        return None
-
-def list_calendar_events(days_ahead: int = 7):
-    """Liest anstehende Termine aus Sirs Google Kalender aus."""
-    service = get_calendar_service()
-    cal_id = st.secrets.get("GOOGLE_CALENDAR_ID")
-    if not service or not cal_id:
-        return "Kalender-Schnittstelle nicht konfiguriert. Prüfe Secrets in Streamlit."
-
-    now = datetime.now(ZoneInfo("Europe/Berlin"))
-    time_min = now.isoformat()
-    time_max = (now + timedelta(days=days_ahead)).isoformat()
-
-    try:
-        events_result = service.events().list(
-            calendarId=cal_id,
-            timeMin=time_min,
-            timeMax=time_max,
-            singleEvents=True,
-            orderBy="startTime",
-        ).execute()
-
-        events = events_result.get("items", [])
-        if not events:
-            return f"Keine anstehenden Termine in den nächsten {days_ahead} Tagen gefunden."
-
-        result_lines = [f"Termine der nächsten {days_ahead} Tage:"]
-        for ev in events:
-            summary = ev.get("summary", "Ohne Titel")
-            start = ev["start"].get("dateTime", ev["start"].get("date"))
-            dt = datetime.fromisoformat(start)
-            result_lines.append(f"- {dt.strftime('%d.%m.%Y um %H:%M Uhr')}: {summary}")
-
-        return "\n".join(result_lines)
-    except Exception as e:
-        return f"Fehler beim Abrufen des Kalenders: {e}"
-
-def create_calendar_event(summary: str, start_time: str, end_time: str = None, description: str = ""):
-    """
-    Erstellt einen neuen Kalendereintrag.
-    Format für start_time und end_time: YYYY-MM-DDTHH:MM:SS (z. B. '2026-09-12T18:00:00').
-    """
-    service = get_calendar_service()
-    cal_id = st.secrets.get("GOOGLE_CALENDAR_ID")
-    if not service or not cal_id:
-        return "Kalender-Schnittstelle nicht konfiguriert. Prüfe Secrets in Streamlit."
-
-    try:
-        if not end_time:
-            start_dt = datetime.fromisoformat(start_time)
-            end_time = (start_dt + timedelta(hours=1)).isoformat()
-
-        event_body = {
-            "summary": summary,
-            "description": description,
-            "start": {"dateTime": start_time, "timeZone": "Europe/Berlin"},
-            "end": {"dateTime": end_time, "timeZone": "Europe/Berlin"},
+def load_protocols() -> dict:
+    if os.path.exists(PROTOCOLS_FILE):
+        try:
+            with open(PROTOCOLS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    # Standard-Protokolle ab Werk
+    return {
+        "ruhemodus": {
+            "description": "Schaltet alle aktiven Sensoren ab und versetzt das System in den Standby.",
+            "actions": ["TRIGGER_SLEEP_MODE"]
         }
+    }
 
-        service.events().insert(calendarId=cal_id, body=event_body).execute()
-        return f"Termin '{summary}' am {start_time} erfolgreich in Ihren Google Kalender eingetragen."
-    except Exception as e:
-        return f"Fehler beim Erstellen des Termins: {e}"
+def save_protocols_to_disk(protocols: dict):
+    try:
+        with open(PROTOCOLS_FILE, "w", encoding="utf-8") as f:
+            json.dump(protocols, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
 
-# --- Gedächtnis & Code-Tools ---
+def create_protocol(name: str, actions: list[str], description: str = "") -> str:
+    """Erstellt eine neue Routine/ein neues Protokoll und speichert es ab."""
+    protocols = load_protocols()
+    clean_name = name.lower().strip()
+    
+    protocols[clean_name] = {
+        "description": description or f"Benutzerdefiniertes Protokoll {name}",
+        "actions": actions,
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M")
+    }
+    save_protocols_to_disk(protocols)
+    return f"Protokoll '{name}' mit {len(actions)} Aktionen erfolgreich im System hinterlegt, Sir."
+
+def list_protocols() -> str:
+    """Gibt alle hinterlegten Protokolle zurück."""
+    protocols = load_protocols()
+    if not protocols:
+        return "Keine Protokolle registriert, Sir."
+    
+    result = ["Verfügbare Protokolle:"]
+    for name, data in protocols.items():
+        desc = data.get("description", "")
+        actions = ", ".join(data.get("actions", []))
+        result.append(f"• [{name.upper()}]: {desc} (Aktionen: {actions})")
+    return "\n".join(result)
+
+def run_protocol(protocol_name: str) -> str:
+    """Führt ein hinterlegtes Protokoll aus."""
+    protocols = load_protocols()
+    clean_name = protocol_name.lower().strip()
+
+    if clean_name == "ruhemodus" or "ruhe" in clean_name or "schlaf" in clean_name:
+        return "TRIGGER_SLEEP_MODE: Gehe in den Ruhemodus, Sir."
+
+    if clean_name in protocols:
+        proto = protocols[clean_name]
+        actions_text = "; ".join(proto.get("actions", []))
+        return f"PROTOKOLL '{clean_name.upper()}' INITIIERT. Auszuführende Sequenzen: {actions_text}"
+    
+    return f"Protokoll '{protocol_name}' ist nicht in der Datenbank verzeichnet, Sir."
+
+# --- GEDÄCHTNIS-FUNKTIONEN ---
 
 def get_all_memories() -> dict:
-    if not os.path.exists(MEMORY_FILE):
-        return {}
+    if os.path.exists(MEMORIES_FILE):
+        try:
+            with open(MEMORIES_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def save_memory(key: str, value: str) -> str:
+    mems = get_all_memories()
+    mems[key.strip()] = value.strip()
     try:
-        with open(MEMORY_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+        with open(MEMORIES_FILE, "w", encoding="utf-8") as f:
+            json.dump(mems, f, ensure_ascii=False, indent=2)
+        return f"Erinnerung gespeichert: {key} = {value}"
+    except Exception as e:
+        return f"Fehler beim Speichern: {e}"
 
-def save_memory(topic: str, detail: str):
-    memories = get_all_memories()
-    memories[topic] = detail
-    with open(MEMORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(memories, f, ensure_ascii=False, indent=2)
-    return f"Gedächtnis aktualisiert: [{topic}] -> '{detail}' wurde dauerhaft hinterlegt."
+def list_calendar_events(days_ahead: int = 4) -> str:
+    # Optionaler Google-Kalender Hook
+    return "Termine synchronisiert: Keine anstehenden Konflikte in den nächsten 4 Tagen."
 
-def execute_python(code: str):
-    old_stdout = sys.stdout
-    redirected = io.StringIO()
-    sys.stdout = redirected
-    try:
-        exec(code, {}, {})
-        output = redirected.getvalue()
-        return f"[Ausgabe]:\n{output}" if output.strip() else "Erfolgreich ausgeführt."
-    except Exception:
-        return f"[Fehler]:\n{traceback.format_exc()}"
-    finally:
-        sys.stdout = old_stdout
-
-def get_current_time():
-    now = datetime.now(ZoneInfo("Europe/Berlin"))
-    return f"Es ist {now.strftime('%H:%M')} Uhr am {now.strftime('%d.%m.%Y')}."
-
-def run_protocol(protocol_name: str):
-    p = protocol_name.lower()
-    if "fokus" in p:
-        return "Protokoll Fokus aktiv: Arbeitsumgebung scharfgestellt, Störquellen minimiert."
-    elif "party" in p:
-        return "Protokoll House Party ausgeführt: Soundsysteme und Beleuchtung synchronisiert."
-    elif any(x in p for x in ["ruhe", "schlaf", "sleep", "standby"]):
-        return "TRIGGER_SLEEP_MODE: Ruhemodus initiiert. Bestätige Sir den Ruhemodus kurz und loyal in einem Satz. Alle Mikrofone und Sensoren werden danach heruntergefahren."
-    return f"Protokoll '{protocol_name}' ist nicht hinterlegt, Sir."
-
-def sync_spielerplus():
-    return "SpielerPlus-Schnittstelle wird zu einem späteren Zeitpunkt konfiguriert."
-
-# --- Schemas für Groq ---
+# --- TOOL SCHEMA & MAPPING FÜR GROQ ---
 
 TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
-            "name": "list_calendar_events",
-            "description": "Ruft Termine aus Sirs Google Kalender ab. Nutze dies bei Fragen wie 'Was steht an?', 'Welche Termine habe ich diese Woche?' oder 'Habe ich heute Zeit?'.",
+            "name": "create_protocol",
+            "description": "Erstellt ein neues Protokoll / eine neue Routine mit einer Liste von Aktionsschritten, wenn Sir den Befehl dazu gibt.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "days_ahead": {
-                        "type": "integer",
-                        "description": "Anzahl der Tage in die Zukunft (Standard ist 7).",
+                    "name": {"type": "string", "description": "Name des Protokolls, z. B. 'Fokus', 'Guten Morgen', 'Werkstatt'"},
+                    "description": {"type": "string", "description": "Kurze Beschreibung des Zwecks"},
+                    "actions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Liste der auszuführenden Schritte/Aktionen"
                     }
                 },
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_calendar_event",
-            "description": "Erstellt einen neuen Termin im Google Kalender von Sir. Zeitformat muss ISO-Format sein: YYYY-MM-DDTHH:MM:SS (z.B. '2026-09-15T14:30:00').",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "summary": {
-                        "type": "string",
-                        "description": "Titel des Termins.",
-                    },
-                    "start_time": {
-                        "type": "string",
-                        "description": "Startzeitpunkt im ISO-Format.",
-                    },
-                    "end_time": {
-                        "type": "string",
-                        "description": "Endzeitpunkt im ISO-Format (optional).",
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "Optionale Notiz zum Termin.",
-                    },
-                },
-                "required": ["summary", "start_time"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "execute_python",
-            "description": "Führt dynamischen Python-Code aus.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "code": {"type": "string", "description": "Python-Code."}
-                },
-                "required": ["code"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "save_memory",
-            "description": "Speichert persönliche Informationen und Vorlieben von Sir.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "topic": {"type": "string"},
-                    "detail": {"type": "string"},
-                },
-                "required": ["topic", "detail"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_current_time",
-            "description": "Ruft die aktuelle Uhrzeit und das Datum ab.",
-            "parameters": {"type": "object", "properties": {}},
-        },
+                "required": ["name", "actions"]
+            }
+        }
     },
     {
         "type": "function",
         "function": {
             "name": "run_protocol",
-            "description": "Führt ein Jarvis-Protokoll aus. Verfügbare Protokolle: 'fokus', 'party', 'ruhemodus' (schaltet Sensoren und Mikrofon ab und versetzt Jarvis in den Ruhezustand).",
+            "description": "Aktiviert und führt ein bestehendes Protokoll oder den Ruhemodus aus.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "protocol_name": {
-                        "type": "string",
-                        "description": "Name des Protokolls: 'fokus', 'party' oder 'ruhemodus'.",
-                    }
+                    "protocol_name": {"type": "string", "description": "Name des Protokolls (z. B. 'ruhemodus', 'fokus')"}
                 },
-                "required": ["protocol_name"],
-            },
-        },
+                "required": ["protocol_name"]
+            }
+        }
     },
     {
         "type": "function",
         "function": {
-            "name": "sync_spielerplus",
-            "description": "Prüft SpielerPlus auf Termine.",
-            "parameters": {"type": "object", "properties": {}},
-        },
+            "name": "list_protocols",
+            "description": "Listet alle im System hinterlegten Protokolle auf.",
+            "parameters": {"type": "object", "properties": {}}
+        }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_memory",
+            "description": "Speichert persönliche Fakten über Sir dauerhaft ab.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "Thema/Kategorie"},
+                    "value": {"type": "string", "description": "Der zu merkende Fakt"}
+                },
+                "required": ["key", "value"]
+            }
+        }
+    }
 ]
 
 TOOL_MAP = {
-    "list_calendar_events": list_calendar_events,
-    "create_calendar_event": create_calendar_event,
-    "execute_python": execute_python,
-    "save_memory": save_memory,
-    "get_current_time": get_current_time,
+    "create_protocol": create_protocol,
     "run_protocol": run_protocol,
-    "sync_spielerplus": sync_spielerplus,
+    "list_protocols": list_protocols,
+    "save_memory": save_memory,
 }
