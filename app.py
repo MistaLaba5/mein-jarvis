@@ -8,6 +8,7 @@ st.set_page_config(page_title="J.A.R.V.I.S.", page_icon="🤖", layout="centered
 st.title("J.A.R.V.I.S. // Online Core")
 st.caption("Systemstatus: Online. Bereit für Ihre Anweisungen, Sir.")
 
+# Groq API-Key laden
 raw_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY", "")
 GROQ_API_KEY = raw_key.strip() if raw_key else ""
 
@@ -29,18 +30,6 @@ def get_available_models():
 
 available_models = get_available_models()
 
-if available_models:
-    # Standardmäßig openai/gpt-oss-120b wählen, falls in der Liste vorhanden
-    default_idx = available_models.index("openai/gpt-oss-120b") if "openai/gpt-oss-120b" in available_models else 0
-    MODEL_NAME = st.sidebar.selectbox("Aktives Groq-Modell:", available_models, index=default_idx)
-else:
-    st.error("Keine verfügbaren Modelle für diesen API-Key gefunden.")
-    st.stop()
-# Reset-Button in der Seitenleiste
-if st.sidebar.button("Chat zurücksetzen"):
-    st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    st.rerun()
-
 SYSTEM_PROMPT = """
 Du bist J.A.R.V.I.S., die hochentwickelte KI von Sir.
 1. Sprich den Nutzer stets diskret und respektvoll mit 'Sir' an.
@@ -48,10 +37,24 @@ Du bist J.A.R.V.I.S., die hochentwickelte KI von Sir.
 3. Wenn der Nutzer nach Uhrzeit, Protokollen oder SpielerPlus fragt, rufe sofort die passenden Tools auf.
 """
 
+# Seitenleiste: Einstellungen & Reset
+with st.sidebar:
+    st.header("Konfiguration")
+    if available_models:
+        default_idx = available_models.index("openai/gpt-oss-120b") if "openai/gpt-oss-120b" in available_models else 0
+        MODEL_NAME = st.selectbox("Aktives Modell:", available_models, index=default_idx)
+    else:
+        st.error("Keine Modelle gefunden.")
+        st.stop()
+        
+    if st.button("Chat zurücksetzen"):
+        st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        st.rerun()
+
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-# Sicherer Chat-Verlauf: Funktioniert mit Objekten und Dictionaries
+# Chat-Verlauf anzeigen
 for msg in st.session_state.messages[1:]:
     role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else None)
     content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
@@ -77,7 +80,6 @@ def process_query(user_text):
         tool_calls = response_message.tool_calls
 
         if tool_calls:
-            # Bereinigte Tool-Call-Liste ohne störende Zusatzattribute
             clean_tool_calls = [
                 {
                     "id": tc.id,
@@ -90,7 +92,6 @@ def process_query(user_text):
                 for tc in tool_calls
             ]
 
-            # Nur die von Groq erlaubten Felder anhängen (keine annotations o.ä.)
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": response_message.content or "",
@@ -127,3 +128,23 @@ def process_query(user_text):
 
     except Exception as e:
         st.error(f"Fehler bei Groq-Anfrage ({MODEL_NAME}): {e}")
+
+# 1. Spracheingabe (Audio-Widget vor dem Chat-Input)
+voice_audio = st.audio_input("Sprachnachricht aufnehmen")
+
+# 2. Text-Eingabefeld (Ganz außen auf Root-Ebene, nicht in Spalten!)
+chat_text = st.chat_input("Befehl eingeben, Sir...")
+
+if chat_text:
+    process_query(chat_text)
+
+if voice_audio:
+    try:
+        transcription = client.audio.transcriptions.create(
+            file=("voice.wav", voice_audio.read()),
+            model="whisper-large-v3"
+        ).text
+        if transcription.strip():
+            process_query(transcription)
+    except Exception as e:
+        st.error(f"Fehler bei Audio-Verarbeitung: {e}")
