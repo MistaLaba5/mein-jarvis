@@ -10,91 +10,140 @@ from groq import Groq
 import edge_tts
 from jarvis_tools import TOOLS_SCHEMA, TOOL_MAP, get_all_memories, list_calendar_events
 
-# Wide-Layout für volles HUD-Erlebnis
 st.set_page_config(page_title="J.A.R.V.I.S. HUD", page_icon="🤖", layout="wide")
 
-# --- Futuristic Cyberpunk / Iron Man HUD CSS ---
+# --- Futuristische Sci-Fi Stylesheet (Iron Man HUD Optik) ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Rajdhani:wght@500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@500;600;700&display=swap');
 
-    /* Global Dark Grid Background */
     .stApp {
-        background-color: #030712;
+        background-color: #020813;
         background-image: 
-            linear-gradient(rgba(0, 240, 255, 0.04) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(0, 240, 255, 0.04) 1px, transparent 1px);
-        background-size: 35px 35px;
+            radial-gradient(circle at 50% 35%, rgba(0, 240, 255, 0.06) 0%, transparent 65%),
+            linear-gradient(rgba(0, 240, 255, 0.035) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0, 240, 255, 0.035) 1px, transparent 1px);
+        background-size: 100% 100%, 30px 30px, 30px 30px;
         color: #cffafe;
         font-family: 'Rajdhani', sans-serif;
     }
 
-    /* Sci-Fi HUD Box */
-    .hud-box {
-        background: rgba(4, 18, 32, 0.75);
-        border: 1px solid #00f0ff66;
-        box-shadow: 0 0 15px rgba(0, 240, 255, 0.12) inset, 0 0 10px rgba(0, 240, 255, 0.08);
-        border-radius: 4px;
-        clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+    /* Sci-Fi Kachel mit abgeschrägten Kanten */
+    .hud-card {
+        background: rgba(4, 19, 36, 0.72);
+        border: 1px solid rgba(0, 240, 255, 0.4);
+        box-shadow: 0 0 16px rgba(0, 240, 255, 0.08) inset, 0 0 10px rgba(0, 240, 255, 0.05);
+        clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
         padding: 14px 18px;
-        margin-bottom: 15px;
-        backdrop-filter: blur(6px);
+        margin-bottom: 14px;
+        backdrop-filter: blur(8px);
+        position: relative;
     }
 
-    .hud-title {
+    .hud-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 8px;
+        height: 8px;
+        border-top: 2px solid #00f0ff;
+        border-left: 2px solid #00f0ff;
+    }
+
+    .hud-header {
         font-family: 'Orbitron', monospace;
         font-size: 11px;
         letter-spacing: 2px;
         color: #38bdf8;
         text-transform: uppercase;
         margin-bottom: 8px;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        border-bottom: 1px solid rgba(56, 189, 248, 0.25);
+        border-bottom: 1px solid rgba(56, 189, 248, 0.2);
         padding-bottom: 4px;
+        display: flex;
+        justify-content: space-between;
     }
 
-    .hud-value {
+    .hud-digital {
         font-family: 'Orbitron', monospace;
-        font-size: 22px;
+        font-size: 24px;
         font-weight: 700;
         color: #00f0ff;
-        text-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+        text-shadow: 0 0 12px rgba(0, 240, 255, 0.7);
     }
 
-    .hud-sub {
-        font-size: 13px;
-        color: #94a3b8;
+    /* Obere Telemetrie-Kapseln wie auf der Bildvorlage */
+    .top-telemetry-container {
+        display: flex;
+        justify-content: center;
+        gap: 22px;
+        margin-bottom: 18px;
+        flex-wrap: wrap;
     }
 
-    /* Telemetrie-Balken */
-    .telemetry-bar {
+    .capsule-gauge {
+        display: flex;
+        align-items: center;
+        background: rgba(3, 17, 32, 0.85);
+        border: 1px solid rgba(0, 240, 255, 0.5);
+        border-radius: 20px;
+        padding: 4px 14px 4px 6px;
+        box-shadow: 0 0 12px rgba(0, 240, 255, 0.15);
+    }
+
+    .capsule-circle {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 2px solid #00f0ff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Orbitron', monospace;
+        font-size: 11px;
+        font-weight: 800;
+        color: #00f0ff;
+        box-shadow: 0 0 8px #00f0ff88 inset;
+        margin-right: 10px;
+    }
+
+    .capsule-bar {
+        width: 90px;
+        height: 10px;
         background: rgba(0, 240, 255, 0.1);
-        border: 1px solid #00f0ff55;
+        border: 1px solid rgba(0, 240, 255, 0.3);
         border-radius: 2px;
-        height: 12px;
+        position: relative;
         overflow: hidden;
-        margin-top: 6px;
     }
-    .telemetry-fill {
-        background: linear-gradient(90deg, #00f0ff, #38bdf8);
+
+    .capsule-fill {
         height: 100%;
+        background: repeating-linear-gradient(
+            45deg,
+            #00f0ff,
+            #00f0ff 4px,
+            #0284c7 4px,
+            #0284c7 8px
+        );
         box-shadow: 0 0 8px #00f0ff;
     }
 
-    /* Expander / Chat Styling */
+    /* Styling für das ausklappbare Chat-Expander-Fenster */
     .streamlit-expanderHeader {
-        background: rgba(4, 18, 32, 0.85) !important;
-        border: 1px solid #00f0ff55 !important;
+        background: rgba(3, 20, 38, 0.9) !important;
+        border: 1px solid #00f0ff66 !important;
+        border-radius: 4px !important;
         color: #38bdf8 !important;
         font-family: 'Orbitron', monospace !important;
         font-size: 12px !important;
+        letter-spacing: 1.5px !important;
     }
-    
-    .stChatInputContainer {
-        border-color: #00f0ff55 !important;
-        box-shadow: 0 0 12px rgba(0, 240, 255, 0.2) !important;
+
+    .streamlit-expanderContent {
+        background: rgba(2, 12, 24, 0.95) !important;
+        border: 1px solid rgba(0, 240, 255, 0.3) !important;
+        border-top: none !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -167,23 +216,33 @@ if "latest_audio_b64" not in st.session_state:
 if "sleep_mode" not in st.session_state:
     st.session_state.sleep_mode = False
 
-# --- Linke Seitenleiste ---
+# --- Linke Seitenleiste (System Control & Gedächtnis) ---
 with st.sidebar:
     st.markdown("<h3 style='font-family: Orbitron; color: #00f0ff;'>⚙️ SYSTEM CONTROL</h3>", unsafe_allow_html=True)
     
     if st.session_state.sleep_mode:
         st.warning("🌙 RUHEMODUS AKTIV")
-        if st.button("⚡ REAKTIVIEREN (WAKE UP)"):
+        if st.button("⚡ REAKTIVIEREN"):
             st.session_state.sleep_mode = False
             st.rerun()
         enable_wakeword = False
         enable_tts = False
     else:
-        enable_wakeword = st.toggle("🎤 'Hey Jarvis' lauschen", value=False)
-        enable_tts = st.toggle("🔊 Sprachausgabe erlauben", value=False)
+        enable_wakeword = st.toggle("🎤 'Hey Jarvis' Dauerlauschen", value=False)
+        # Sprachausgabe standardmäßig aktiv (True)
+        enable_tts = st.toggle("🔊 Sprachausgabe erlauben", value=True)
 
     input_lang = st.selectbox("Mikrofon-Sprache:", ["Deutsch (de-DE)", "English (en-US)"])
     rec_lang_code = "de-DE" if "Deutsch" in input_lang else "en-US"
+
+    st.divider()
+    st.markdown("<h4 style='font-family: Orbitron; font-size: 13px; color: #38bdf8;'>🧠 LANGZEITGEDÄCHTNIS</h4>", unsafe_allow_html=True)
+    mems = get_all_memories()
+    if mems:
+        for k, v in mems.items():
+            st.markdown(f"<div style='font-size: 12px; margin-bottom: 4px;'>• <b style='color:#38bdf8;'>{k}:</b> {v}</div>", unsafe_allow_html=True)
+    else:
+        st.caption("Noch keine Fakten über Sir gespeichert.")
 
     st.divider()
     st.markdown("<h4 style='font-family: Orbitron; font-size: 13px; color: #38bdf8;'>KI-KERN (GROQ)</h4>", unsafe_allow_html=True)
@@ -316,114 +375,173 @@ def process_query(user_text, is_voice=False):
     except Exception as e:
         st.error(f"Fehler: {e}")
 
-# --- HUD LAYOUT IN 3 SPALTEN ---
+# --- OBERE TELEMETRIE-KAPSELN (Exakt wie auf der Bildvorlage) ---
+st.markdown("""
+<div class="top-telemetry-container">
+    <div class="capsule-gauge">
+        <div class="capsule-circle">20%</div>
+        <div class="capsule-bar"><div class="capsule-fill" style="width: 20%;"></div></div>
+    </div>
+    <div class="capsule-gauge">
+        <div class="capsule-circle">30%</div>
+        <div class="capsule-bar"><div class="capsule-fill" style="width: 30%;"></div></div>
+    </div>
+    <div class="capsule-gauge">
+        <div class="capsule-circle">50%</div>
+        <div class="capsule-bar"><div class="capsule-fill" style="width: 50%;"></div></div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# --- 3-SPALTIGES HUD-LAYOUT ---
 now = datetime.now(ZoneInfo("Europe/Berlin"))
 col_left, col_center, col_right = st.columns([3.2, 5.6, 3.2])
 
-# === LINKE SPALTE: DATEN & SENSOREN ===
+# === LINKE SPALTE: ZEIT & KALENDER ===
 with col_left:
     st.markdown(f"""
-    <div class="hud-box">
-        <div class="hud-title">⏱️ CHRONO // SYSTEMZEIT</div>
-        <div class="hud-value">{now.strftime('%H:%M:%S')} <span style="font-size: 14px;">CET</span></div>
-        <div class="hud-sub">{now.strftime('%A, %d.%m.%Y')}</div>
+    <div class="hud-card">
+        <div class="hud-header"><span>⏱️ CHRONO // SYSTEM</span> <span>[ACT]</span></div>
+        <div class="hud-digital">{now.strftime('%H:%M:%S')}</div>
+        <div style="color: #38bdf8; font-size: 14px; font-weight: 600; margin-top: 4px;">{now.strftime('%A, %d.%m.%Y')}</div>
+        <div style="font-size: 11px; color: #64748b; margin-top: 2px;">TIMEZONE: EUROPE/BERLIN (CET)</div>
     </div>
     """, unsafe_allow_html=True)
 
-    cal_preview = list_calendar_events(days_ahead=3)
-    first_lines = "\n".join(cal_preview.split("\n")[:4]) if isinstance(cal_preview, str) else "Keine Daten"
+    cal_preview = list_calendar_events(days_ahead=4)
+    first_lines = "\n".join(cal_preview.split("\n")[:4]) if isinstance(cal_preview, str) else "Keine Termine"
     st.markdown(f"""
-    <div class="hud-box">
-        <div class="hud-title">📅 KALENDER // AGENDA</div>
-        <div style="font-size: 13px; line-height: 1.5; color: #7dd3fc; white-space: pre-line;">{first_lines}</div>
+    <div class="hud-card">
+        <div class="hud-header"><span>📅 KALENDER // AGENDA</span> <span>[SYNC]</span></div>
+        <div style="font-size: 13px; line-height: 1.6; color: #7dd3fc; white-space: pre-line;">{first_lines}</div>
     </div>
     """, unsafe_allow_html=True)
 
-    mems = get_all_memories()
-    mem_items = "".join([f"<div style='margin-bottom: 4px;'>• <b style='color:#38bdf8;'>{k}:</b> {v}</div>" for k, v in list(mems.items())[:3]]) or "<i>Keine Einträge hinterlegt</i>"
-    st.markdown(f"""
-    <div class="hud-box">
-        <div class="hud-title">🧠 LANGZEITGEDÄCHTNIS</div>
-        <div style="font-size: 12px; color: #bae6fd;">{mem_items}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-# === MITTLERE SPALTE: DAS PULSIERENDE ARC-REACTOR-HOLOGRAMM ===
+# === MITTLERE SPALTE: DAS HOLOGRAMM MIT SMOOTHEN FARBEN & LAUSCHEN-BUTTON ===
 with col_center:
     audio_payload = st.session_state.latest_audio_b64
     st.session_state.latest_audio_b64 = ""
     is_sleep = st.session_state.sleep_mode
 
-    # Reines HTML/CSS/JS Template ohne f-String (verhindert Python Syntax-Errors mit { })
     hud_template = """
     <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%;">
         
-        <div id="reactor-wrapper" style="position: relative; width: 340px; height: 340px; display: flex; align-items: center; justify-content: center;">
-            <svg id="arc-reactor" viewBox="0 0 400 400" width="340" height="340" style="transition: all 0.5s ease;">
+        <!-- Arc Reactor (Klickbar für sofortiges Sprechen) -->
+        <div id="reactor-wrapper" onclick="triggerListenDirectly()" style="cursor: pointer; position: relative; width: 320px; height: 320px; display: flex; align-items: center; justify-content: center;" title="Klicken, um sofort zu sprechen">
+            <svg id="arc-reactor" viewBox="0 0 400 400" width="320" height="320">
                 
-                <circle cx="200" cy="200" r="180" fill="none" stroke="rgba(0, 240, 255, 0.08)" stroke-width="1" />
-                <circle cx="200" cy="200" r="160" fill="none" stroke="rgba(0, 240, 255, 0.15)" stroke-dasharray="6, 8" />
+                <!-- Äußerer Skalenring -->
+                <circle cx="200" cy="200" r="185" fill="none" stroke="rgba(0, 240, 255, 0.12)" stroke-width="1.5" />
+                <circle cx="200" cy="200" r="172" fill="none" stroke="rgba(0, 240, 255, 0.2)" stroke-dasharray="4, 10" />
 
-                <g id="ring-outer" style="transform-origin: 200px 200px; animation: spinClockwise 22s linear infinite;">
-                    <circle cx="200" cy="200" r="145" fill="none" stroke="var(--hud-primary, #00f0ff)" stroke-width="3" stroke-dasharray="90, 20, 40, 20" opacity="0.8" />
-                    <circle cx="200" cy="200" r="135" fill="none" stroke="var(--hud-primary, #00f0ff)" stroke-width="1" stroke-dasharray="10, 10" opacity="0.6" />
+                <!-- Segmentierter Ring (Rotierend) -->
+                <g id="ring-outer" style="transform-origin: 200px 200px; animation: spinClockwise 26s linear infinite;">
+                    <circle cx="200" cy="200" r="150" fill="none" stroke="var(--hud-stroke, #00f0ff)" stroke-width="3" stroke-dasharray="100, 25, 45, 25" opacity="0.85" />
+                    <circle cx="200" cy="200" r="138" fill="none" stroke="var(--hud-stroke, #00f0ff)" stroke-width="1.5" stroke-dasharray="8, 12" opacity="0.6" />
                 </g>
 
-                <g id="ring-mid" style="transform-origin: 200px 200px; animation: spinCounter 14s linear infinite;">
-                    <circle cx="200" cy="200" r="115" fill="none" stroke="var(--hud-secondary, #38bdf8)" stroke-width="4" stroke-dasharray="35, 12, 15, 12" opacity="0.9" />
-                    <circle cx="200" cy="200" r="100" fill="none" stroke="var(--hud-secondary, #38bdf8)" stroke-width="1.5" stroke-dasharray="4, 6" />
+                <!-- Mittlerer Gegenring -->
+                <g id="ring-mid" style="transform-origin: 200px 200px; animation: spinCounter 16s linear infinite;">
+                    <circle cx="200" cy="200" r="118" fill="none" stroke="var(--hud-stroke-sec, #38bdf8)" stroke-width="4.5" stroke-dasharray="40, 14, 20, 14" opacity="0.9" />
+                    <circle cx="200" cy="200" r="102" fill="none" stroke="var(--hud-stroke-sec, #38bdf8)" stroke-width="1.5" stroke-dasharray="6, 8" />
                 </g>
 
-                <g id="ring-inner" style="transform-origin: 200px 200px; animation: spinClockwise 8s linear infinite;">
-                    <circle cx="200" cy="200" r="75" fill="none" stroke="var(--hud-primary, #00f0ff)" stroke-width="2" stroke-dasharray="20, 8, 40, 8" />
+                <!-- Innenring -->
+                <g id="ring-inner" style="transform-origin: 200px 200px; animation: spinClockwise 9s linear infinite;">
+                    <circle cx="200" cy="200" r="76" fill="none" stroke="var(--hud-stroke, #00f0ff)" stroke-width="2" stroke-dasharray="24, 10, 36, 10" />
                 </g>
 
-                <circle id="core-glow" cx="200" cy="200" r="50" fill="rgba(0, 240, 255, 0.12)" stroke="var(--hud-primary, #00f0ff)" stroke-width="2.5" style="transform-origin: 200px 200px; animation: corePulse 2s ease-in-out infinite;" />
-                <circle id="core-center" cx="200" cy="200" r="22" fill="var(--hud-primary, #00f0ff)" opacity="0.85" />
+                <!-- Pulsierender Kern -->
+                <circle id="core-glow" cx="200" cy="200" r="50" fill="var(--hud-fill, rgba(0, 240, 255, 0.15))" stroke="var(--hud-stroke, #00f0ff)" stroke-width="2.5" style="transform-origin: 200px 200px; animation: smoothPulse 2.8s ease-in-out infinite;" />
+                <circle id="core-center" cx="200" cy="200" r="22" fill="var(--hud-stroke, #00f0ff)" opacity="0.85" />
             </svg>
 
+            <!-- Status-Badge in der Reaktormitte -->
             <div style="position: absolute; text-align: center; pointer-events: none;">
-                <div id="hud-status-badge" style="
+                <div id="hud-badge" style="
                     font-family: 'Orbitron', monospace;
-                    font-size: 11px;
+                    font-size: 10px;
                     letter-spacing: 2px;
                     color: #fff;
-                    background: rgba(3, 15, 29, 0.85);
-                    padding: 4px 10px;
-                    border: 1px solid #00f0ff55;
+                    background: rgba(2, 10, 22, 0.85);
+                    padding: 3px 8px;
+                    border: 1px solid rgba(0, 240, 255, 0.4);
                     border-radius: 4px;
-                    text-transform: uppercase;
                 ">STANDBY</div>
             </div>
         </div>
 
-        <div style="margin-top: 10px; text-align: center; width: 100%;">
-            <span id="hud-substatus" style="font-family: 'Rajdhani', sans-serif; font-size: 14px; color: #7dd3fc; letter-spacing: 1px;">Sensoren bereit</span>
-            <div id="hud-voice-text" style="font-family: 'Orbitron', monospace; font-size: 13px; color: #38bdf8; min-height: 20px; margin-top: 4px;"></div>
+        <!-- Prominenter Lauschen-Button -->
+        <button id="btn-listen" onclick="triggerListenDirectly()" style="
+            margin-top: 14px;
+            background: rgba(4, 25, 48, 0.85);
+            border: 1px solid #00f0ff;
+            box-shadow: 0 0 14px rgba(0, 240, 255, 0.35);
+            color: #00f0ff;
+            font-family: 'Orbitron', monospace;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            padding: 8px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        ">🎙️ LAUSCHEN AKTIVIEREN</button>
+
+        <!-- Spracherkennungs-Feedback -->
+        <div id="hud-transcript" style="
+            font-family: 'Orbitron', monospace;
+            font-size: 12px;
+            color: #38bdf8;
+            min-height: 22px;
+            margin-top: 8px;
+            text-align: center;
+        "></div>
+
+        <!-- Die 8 kleinen kybernetischen Kreise am Boden wie in der Vorlage -->
+        <div style="display: flex; gap: 10px; margin-top: 10px; opacity: 0.7;">
+            <svg width="22" height="22" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="2" stroke-dasharray="15, 10"/></svg>
+            <svg width="22" height="22" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="1.5" stroke-dasharray="8, 6"/></svg>
+            <svg width="22" height="22" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="2" stroke-dasharray="25, 12"/></svg>
+            <svg width="22" height="22" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="1.5" stroke-dasharray="4, 4"/></svg>
+            <svg width="22" height="22" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="2" stroke-dasharray="18, 8"/></svg>
+            <svg width="22" height="22" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="1.5" stroke-dasharray="10, 10"/></svg>
+            <svg width="22" height="22" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="2" stroke-dasharray="30, 8"/></svg>
+            <svg width="22" height="22" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="1.5" stroke-dasharray="6, 6"/></svg>
         </div>
 
     </div>
 
     <style>
         :root {
-            --hud-primary: #00f0ff;
-            --hud-secondary: #38bdf8;
+            --hud-stroke: #00f0ff;
+            --hud-stroke-sec: #38bdf8;
+            --hud-fill: rgba(0, 240, 255, 0.15);
         }
 
-        @keyframes spinClockwise {
-            100% { transform: rotate(360deg); }
+        /* Butterweiche Farb- und Scheinübergänge */
+        #arc-reactor circle, #arc-reactor g {
+            transition: stroke 1.2s cubic-bezier(0.25, 1, 0.5, 1),
+                        fill 1.2s cubic-bezier(0.25, 1, 0.5, 1),
+                        filter 1.2s cubic-bezier(0.25, 1, 0.5, 1),
+                        opacity 0.8s ease;
         }
-        @keyframes spinCounter {
-            100% { transform: rotate(-360deg); }
+
+        #hud-badge, #btn-listen {
+            transition: all 0.8s cubic-bezier(0.25, 1, 0.5, 1);
         }
-        @keyframes corePulse {
-            0%, 100% { transform: scale(1); opacity: 0.7; }
-            50% { transform: scale(1.1); opacity: 1; filter: drop-shadow(0 0 14px var(--hud-primary)); }
+
+        @keyframes spinClockwise { 100% { transform: rotate(360deg); } }
+        @keyframes spinCounter { 100% { transform: rotate(-360deg); } }
+
+        @keyframes smoothPulse {
+            0%, 100% { transform: scale(1); filter: drop-shadow(0 0 6px var(--hud-stroke)); opacity: 0.8; }
+            50% { transform: scale(1.08); filter: drop-shadow(0 0 20px var(--hud-stroke)); opacity: 1; }
         }
-        @keyframes speakingFrenzy {
-            0%, 100% { transform: scale(1); filter: drop-shadow(0 0 8px #a855f7); }
-            50% { transform: scale(1.18); filter: drop-shadow(0 0 25px #c084fc); }
+
+        @keyframes speakingPulse {
+            0%, 100% { transform: scale(1); filter: drop-shadow(0 0 10px #c084fc); }
+            50% { transform: scale(1.15); filter: drop-shadow(0 0 28px #e879f9); }
         }
     </style>
 
@@ -434,47 +552,52 @@ with col_center:
     const targetLang = "__TARGET_LANG__";
 
     const root = document.documentElement;
-    const badge = document.getElementById('hud-status-badge');
-    const substatus = document.getElementById('hud-substatus');
-    const voiceText = document.getElementById('hud-voice-text');
+    const badge = document.getElementById('hud-badge');
+    const transcript = document.getElementById('hud-transcript');
     const core = document.getElementById('core-glow');
+    const btnListen = document.getElementById('btn-listen');
 
     function applyState(mode) {
         if (mode === 'sleep') {
-            root.style.setProperty('--hud-primary', '#ef4444');
-            root.style.setProperty('--hud-secondary', '#991b1b');
+            root.style.setProperty('--hud-stroke', '#ef4444');
+            root.style.setProperty('--hud-stroke-sec', '#991b1b');
+            root.style.setProperty('--hud-fill', 'rgba(239, 68, 68, 0.12)');
             badge.innerText = 'OFFLINE';
             badge.style.borderColor = '#ef4444';
-            substatus.innerText = '🌙 Ruhemodus aktiv – Sensoren verriegelt';
+            transcript.innerText = '🌙 Ruhemodus aktiv';
+            btnListen.style.borderColor = '#ef4444';
+            btnListen.style.color = '#ef4444';
         } else if (mode === 'speaking') {
-            root.style.setProperty('--hud-primary', '#c084fc');
-            root.style.setProperty('--hud-secondary', '#a855f7');
-            badge.innerText = 'JARVIS SPRICHT';
+            root.style.setProperty('--hud-stroke', '#c084fc');
+            root.style.setProperty('--hud-stroke-sec', '#a855f7');
+            root.style.setProperty('--hud-fill', 'rgba(192, 132, 252, 0.2)');
+            badge.innerText = 'JARVIS';
             badge.style.borderColor = '#c084fc';
-            substatus.innerText = 'Übertrage akustische Antwort...';
-            core.style.animation = 'speakingFrenzy 0.6s ease-in-out infinite';
+            transcript.innerText = 'Antwort wird übertragen...';
+            core.style.animation = 'speakingPulse 0.7s ease-in-out infinite';
         } else if (mode === 'listening') {
-            root.style.setProperty('--hud-primary', '#facc15');
-            root.style.setProperty('--hud-secondary', '#38bdf8');
-            badge.innerText = 'ERKENNUNG';
+            root.style.setProperty('--hud-stroke', '#facc15');
+            root.style.setProperty('--hud-stroke-sec', '#f59e0b');
+            root.style.setProperty('--hud-fill', 'rgba(250, 204, 21, 0.2)');
+            badge.innerText = 'HÖRE ZU';
             badge.style.borderColor = '#facc15';
-            substatus.innerText = 'Sir spricht – Akustik-Prozessor aktiv...';
-            core.style.animation = 'corePulse 0.8s ease-in-out infinite';
+            transcript.innerText = 'Sir spricht...';
+            core.style.animation = 'smoothPulse 0.9s ease-in-out infinite';
         } else {
-            root.style.setProperty('--hud-primary', '#00f0ff');
-            root.style.setProperty('--hud-secondary', '#38bdf8');
+            root.style.setProperty('--hud-stroke', '#00f0ff');
+            root.style.setProperty('--hud-stroke-sec', '#38bdf8');
+            root.style.setProperty('--hud-fill', 'rgba(0, 240, 255, 0.15)');
             badge.innerText = active ? 'ONLINE' : 'STANDBY';
-            badge.style.borderColor = '#00f0ff55';
-            substatus.innerText = active ? 'Warte auf "Hey Jarvis"...' : 'Mikrofon inaktiv';
-            core.style.animation = 'corePulse 2.5s ease-in-out infinite';
+            badge.style.borderColor = 'rgba(0, 240, 255, 0.4)';
+            transcript.innerText = active ? 'Warte auf "Hey Jarvis"...' : '';
+            core.style.animation = 'smoothPulse 2.8s ease-in-out infinite';
+            btnListen.style.borderColor = '#00f0ff';
+            btnListen.style.color = '#00f0ff';
         }
     }
 
-    if (isSleep) {
-        applyState('sleep');
-    } else {
-        applyState('standby');
-    }
+    if (isSleep) applyState('sleep');
+    else applyState('standby');
 
     let isSpeaking = false;
     if (audioB64.length > 0) {
@@ -494,16 +617,17 @@ with col_center:
         };
     }
 
+    let rec = null;
+    let isListeningCommand = false;
+    let silenceTimeout = null;
+    let fullCommand = "";
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
-        const rec = new SpeechRecognition();
+        rec = new SpeechRecognition();
         rec.continuous = true;
         rec.interimResults = true;
         rec.lang = targetLang;
-
-        let isListeningCommand = false;
-        let silenceTimeout = null;
-        let fullCommand = "";
 
         if (active && !isSpeaking && !isSleep) {
             try { rec.start(); } catch(e) {}
@@ -532,28 +656,36 @@ with col_center:
                 let cleanCmd = raw.replace(/^hey jarvis/gi, "").replace(/^jarvis/gi, "").trim();
                 if (cleanCmd.length > 0) {
                     fullCommand = cleanCmd;
-                    voiceText.innerText = '"' + fullCommand + '"';
+                    transcript.innerText = '"' + fullCommand + '"';
 
                     clearTimeout(silenceTimeout);
                     silenceTimeout = setTimeout(() => {
                         if (fullCommand.trim().length > 0) {
                             const parentDoc = window.parent.document;
-                            const ta = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
-                            if (ta) {
-                                const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-                                nativeSetter.call(ta, "[VOICE] " + fullCommand);
-                                ta.dispatchEvent(new Event('input', { bubbles: true }));
+                            
+                            // Falls das Chat-Fenster zugeklappt ist, für Feedback öffnen
+                            const expander = parentDoc.querySelector('details[data-testid="stExpander"]');
+                            if (expander && !expander.open) expander.open = true;
 
-                                setTimeout(() => {
-                                    const btn = parentDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
-                                    if (btn) btn.click();
-                                    else {
-                                        ta.dispatchEvent(new KeyboardEvent('keydown', {
-                                            bubbles: true, cancelable: true, keyCode: 13, key: 'Enter'
-                                        }));
-                                    }
-                                }, 100);
-                            }
+                            setTimeout(() => {
+                                const ta = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+                                if (ta) {
+                                    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+                                    setter.call(ta, "[VOICE] " + fullCommand);
+                                    ta.dispatchEvent(new Event('input', { bubbles: true }));
+
+                                    setTimeout(() => {
+                                        const btn = parentDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
+                                        if (btn) btn.click();
+                                        else {
+                                            ta.dispatchEvent(new KeyboardEvent('keydown', {
+                                                bubbles: true, cancelable: true, keyCode: 13, key: 'Enter'
+                                            }));
+                                        }
+                                    }, 100);
+                                }
+                            }, 80);
+
                             fullCommand = "";
                             isListeningCommand = false;
                             applyState('standby');
@@ -564,15 +696,25 @@ with col_center:
         };
 
         rec.onend = () => {
-            if (active && !isSpeaking && !isSleep) {
+            if ((active || isListeningCommand) && !isSpeaking && !isSleep) {
                 try { rec.start(); } catch(e) {}
             }
         };
     }
+
+    // Funktion für Klick auf den Lauschen-Button oder Arc Reactor
+    window.triggerListenDirectly = function() {
+        if (isSleep || isSpeaking) return;
+        isListeningCommand = true;
+        applyState('listening');
+        transcript.innerText = "Lausche... Sprechen Sie, Sir.";
+        if (rec) {
+            try { rec.start(); } catch(e) {}
+        }
+    };
     </script>
     """
 
-    # Sicheres Ersetzen der Platzhalter ohne f-String
     hud_html = (
         hud_template.replace("__IS_SLEEP__", str(is_sleep).lower())
         .replace("__ACTIVE__", str(enable_wakeword and not is_sleep).lower())
@@ -580,34 +722,42 @@ with col_center:
         .replace("__TARGET_LANG__", rec_lang_code)
     )
 
-    components.html(hud_html, height=430)
+    components.html(hud_html, height=450)
 
-
-# === RECHTE SPALTE: TELEMETRIE & AUSKLAPPBARER CHAT ===
+# === RECHTE SPALTE: TELEMETRIE-DIAGNOSE & AUSKLAPPBARER CHAT ===
 with col_right:
+    # Saubere visuelle Status-Skalen statt Text
     st.markdown("""
-    <div class="hud-box">
-        <div class="hud-title">⚡ SYSTEM STATUS // HARDWARE</div>
-        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 4px;">
-            <span>KERN-INTEGRITÄT</span> <span>98%</span>
-        </div>
-        <div class="telemetry-bar"><div class="telemetry-fill" style="width: 98%;"></div></div>
+    <div class="hud-card">
+        <div class="hud-header"><span>⚡ TELEMETRIE // KERN</span> <span>[OK]</span></div>
         
-        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 8px;">
-            <span>LPU LATENZ (GROQ)</span> <span>20%</span>
+        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 6px;">
+            <span>KERN-INTEGRITÄT</span> <span style="color:#00f0ff;">99.4%</span>
         </div>
-        <div class="telemetry-bar"><div class="telemetry-fill" style="width: 20%;"></div></div>
+        <div style="background: rgba(0,240,255,0.1); height: 6px; border-radius: 2px; overflow: hidden; margin-top: 3px;">
+            <div style="background: #00f0ff; width: 99%; height: 100%; box-shadow: 0 0 6px #00f0ff;"></div>
+        </div>
 
-        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 8px;">
-            <span>SYNAPSEN-INDEX</span> <span>50%</span>
+        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 10px;">
+            <span>LPU VERARBEITUNG</span> <span style="color:#38bdf8;">0.18s</span>
         </div>
-        <div class="telemetry-bar"><div class="telemetry-fill" style="width: 50%;"></div></div>
+        <div style="background: rgba(0,240,255,0.1); height: 6px; border-radius: 2px; overflow: hidden; margin-top: 3px;">
+            <div style="background: #38bdf8; width: 88%; height: 100%; box-shadow: 0 0 6px #38bdf8;"></div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 10px;">
+            <span>AUDIO STREAM</span> <span style="color:#10b981;">SYNCHRON</span>
+        </div>
+        <div style="background: rgba(0,240,255,0.1); height: 6px; border-radius: 2px; overflow: hidden; margin-top: 3px;">
+            <div style="background: #10b981; width: 100%; height: 100%; box-shadow: 0 0 6px #10b981;"></div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-    with st.expander("🗨️ KOMMUNIKATIONS-PROTOKOLL", expanded=True):
-        chat_container = st.container(height=260)
-        with chat_container:
+    # Ausklappbares Fenster: Standardmäßig zugeklappt (expanded=False)
+    with st.expander("🗨️ CHAT-TERMINAL & PROTOKOLL", expanded=False):
+        chat_box = st.container(height=280)
+        with chat_box:
             for msg in st.session_state.messages[1:]:
                 role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else None)
                 content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
@@ -615,12 +765,11 @@ with col_right:
                     with st.chat_message(role):
                         st.write(content)
 
-# --- Chat-Eingabe ganz unten ---
-chat_text = st.chat_input("Befehl an J.A.R.V.I.S. übermitteln, Sir...")
-if chat_text:
-    if chat_text.startswith("[VOICE]"):
-        clean_text = chat_text.replace("[VOICE]", "").strip()
-        process_query(clean_text, is_voice=True)
-    else:
-        process_query(chat_text, is_voice=False)
-    st.rerun()
+        chat_text = st.chat_input("Befehl an J.A.R.V.I.S., Sir...")
+        if chat_text:
+            if chat_text.startswith("[VOICE]"):
+                clean = chat_text.replace("[VOICE]", "").strip()
+                process_query(clean, is_voice=True)
+            else:
+                process_query(chat_text, is_voice=False)
+            st.rerun()
