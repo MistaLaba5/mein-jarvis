@@ -68,7 +68,7 @@ st.markdown("""
         color: #94a3b8;
     }
 
-    /* Telemetrie-Balken wie in der Vorlage */
+    /* Telemetrie-Balken */
     .telemetry-bar {
         background: rgba(0, 240, 255, 0.1);
         border: 1px solid #00f0ff55;
@@ -83,7 +83,7 @@ st.markdown("""
         box-shadow: 0 0 8px #00f0ff;
     }
 
-    /* Expander / Drawer Styling */
+    /* Expander / Chat Styling */
     .streamlit-expanderHeader {
         background: rgba(4, 18, 32, 0.85) !important;
         border: 1px solid #00f0ff55 !important;
@@ -92,7 +92,6 @@ st.markdown("""
         font-size: 12px !important;
     }
     
-    /* Input Styling */
     .stChatInputContainer {
         border-color: #00f0ff55 !important;
         box-shadow: 0 0 12px rgba(0, 240, 255, 0.2) !important;
@@ -168,7 +167,7 @@ if "latest_audio_b64" not in st.session_state:
 if "sleep_mode" not in st.session_state:
     st.session_state.sleep_mode = False
 
-# --- Linke Seitenleiste: Audio, Sensoren & Systemsteuerung ---
+# --- Linke Seitenleiste ---
 with st.sidebar:
     st.markdown("<h3 style='font-family: Orbitron; color: #00f0ff;'>⚙️ SYSTEM CONTROL</h3>", unsafe_allow_html=True)
     
@@ -323,7 +322,6 @@ col_left, col_center, col_right = st.columns([3.2, 5.6, 3.2])
 
 # === LINKE SPALTE: DATEN & SENSOREN ===
 with col_left:
-    # Kachel 1: Zeit & Datum
     st.markdown(f"""
     <div class="hud-box">
         <div class="hud-title">⏱️ CHRONO // SYSTEMZEIT</div>
@@ -332,7 +330,6 @@ with col_left:
     </div>
     """, unsafe_allow_html=True)
 
-    # Kachel 2: Google Kalender Status
     cal_preview = list_calendar_events(days_ahead=3)
     first_lines = "\n".join(cal_preview.split("\n")[:4]) if isinstance(cal_preview, str) else "Keine Daten"
     st.markdown(f"""
@@ -342,7 +339,6 @@ with col_left:
     </div>
     """, unsafe_allow_html=True)
 
-    # Kachel 3: Langzeitgedächtnis
     mems = get_all_memories()
     mem_items = "".join([f"<div style='margin-bottom: 4px;'>• <b style='color:#38bdf8;'>{k}:</b> {v}</div>" for k, v in list(mems.items())[:3]]) or "<i>Keine Einträge hinterlegt</i>"
     st.markdown(f"""
@@ -359,40 +355,34 @@ with col_center:
     st.session_state.latest_audio_b64 = ""
     is_sleep = st.session_state.sleep_mode
 
-    hud_html = f"""
+    # Reines HTML/CSS/JS Template ohne f-String (verhindert Python Syntax-Errors mit { })
+    hud_template = """
     <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%;">
         
-        <!-- Animated Holographic Arc Reactor (Centerpiece) -->
         <div id="reactor-wrapper" style="position: relative; width: 340px; height: 340px; display: flex; align-items: center; justify-content: center;">
             <svg id="arc-reactor" viewBox="0 0 400 400" width="340" height="340" style="transition: all 0.5s ease;">
                 
-                <!-- Background Glow Core -->
                 <circle cx="200" cy="200" r="180" fill="none" stroke="rgba(0, 240, 255, 0.08)" stroke-width="1" />
                 <circle cx="200" cy="200" r="160" fill="none" stroke="rgba(0, 240, 255, 0.15)" stroke-dasharray="6, 8" />
 
-                <!-- Outer Segmented Rotating Ring -->
                 <g id="ring-outer" style="transform-origin: 200px 200px; animation: spinClockwise 22s linear infinite;">
                     <circle cx="200" cy="200" r="145" fill="none" stroke="var(--hud-primary, #00f0ff)" stroke-width="3" stroke-dasharray="90, 20, 40, 20" opacity="0.8" />
                     <circle cx="200" cy="200" r="135" fill="none" stroke="var(--hud-primary, #00f0ff)" stroke-width="1" stroke-dasharray="10, 10" opacity="0.6" />
                 </g>
 
-                <!-- Middle Reverse Rotating Segment Ring -->
                 <g id="ring-mid" style="transform-origin: 200px 200px; animation: spinCounter 14s linear infinite;">
                     <circle cx="200" cy="200" r="115" fill="none" stroke="var(--hud-secondary, #38bdf8)" stroke-width="4" stroke-dasharray="35, 12, 15, 12" opacity="0.9" />
                     <circle cx="200" cy="200" r="100" fill="none" stroke="var(--hud-secondary, #38bdf8)" stroke-width="1.5" stroke-dasharray="4, 6" />
                 </g>
 
-                <!-- Inner Precision Ring -->
                 <g id="ring-inner" style="transform-origin: 200px 200px; animation: spinClockwise 8s linear infinite;">
                     <circle cx="200" cy="200" r="75" fill="none" stroke="var(--hud-primary, #00f0ff)" stroke-width="2" stroke-dasharray="20, 8, 40, 8" />
                 </g>
 
-                <!-- Core Pulsing Sphere -->
                 <circle id="core-glow" cx="200" cy="200" r="50" fill="rgba(0, 240, 255, 0.12)" stroke="var(--hud-primary, #00f0ff)" stroke-width="2.5" style="transform-origin: 200px 200px; animation: corePulse 2s ease-in-out infinite;" />
                 <circle id="core-center" cx="200" cy="200" r="22" fill="var(--hud-primary, #00f0ff)" opacity="0.85" />
             </svg>
 
-            <!-- Status HUD Overlay Text in Center -->
             <div style="position: absolute; text-align: center; pointer-events: none;">
                 <div id="hud-status-badge" style="
                     font-family: 'Orbitron', monospace;
@@ -408,7 +398,6 @@ with col_center:
             </div>
         </div>
 
-        <!-- Real-time Voice Detection Bar -->
         <div style="margin-top: 10px; text-align: center; width: 100%;">
             <span id="hud-substatus" style="font-family: 'Rajdhani', sans-serif; font-size: 14px; color: #7dd3fc; letter-spacing: 1px;">Sensoren bereit</span>
             <div id="hud-voice-text" style="font-family: 'Orbitron', monospace; font-size: 13px; color: #38bdf8; min-height: 20px; margin-top: 4px;"></div>
@@ -439,10 +428,10 @@ with col_center:
     </style>
 
     <script>
-    const isSleep = {str(is_sleep).lower()};
-    const active = {str(enable_wakeword).lower()} && !isSleep;
-    const audioB64 = "{audio_payload}";
-    const targetLang = "{rec_lang_code}";
+    const isSleep = __IS_SLEEP__;
+    const active = __ACTIVE__;
+    const audioB64 = "__AUDIO_B64__";
+    const targetLang = "__TARGET_LANG__";
 
     const root = document.documentElement;
     const badge = document.getElementById('hud-status-badge');
@@ -487,7 +476,6 @@ with col_center:
         applyState('standby');
     }
 
-    // --- Audioausgabe & Farbumschaltung ---
     let isSpeaking = false;
     if (audioB64.length > 0) {
         isSpeaking = true;
@@ -506,7 +494,6 @@ with col_center:
         };
     }
 
-    // --- Spracherkennung & Interaktiver Puls ---
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
         const rec = new SpeechRecognition();
@@ -584,13 +571,21 @@ with col_center:
     }
     </script>
     """
+
+    # Sicheres Ersetzen der Platzhalter ohne f-String
+    hud_html = (
+        hud_template.replace("__IS_SLEEP__", str(is_sleep).lower())
+        .replace("__ACTIVE__", str(enable_wakeword and not is_sleep).lower())
+        .replace("__AUDIO_B64__", audio_payload)
+        .replace("__TARGET_LANG__", rec_lang_code)
+    )
+
     components.html(hud_html, height=430)
 
 
 # === RECHTE SPALTE: TELEMETRIE & AUSKLAPPBARER CHAT ===
 with col_right:
-    # Kachel 4: Systemdiagnose (wie die Balken im oberen Bildbereich)
-    st.markdown(f"""
+    st.markdown("""
     <div class="hud-box">
         <div class="hud-title">⚡ SYSTEM STATUS // HARDWARE</div>
         <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 4px;">
@@ -610,7 +605,6 @@ with col_right:
     </div>
     """, unsafe_allow_html=True)
 
-    # Kachel 5: Das ausklappbare Chat-Fenster
     with st.expander("🗨️ KOMMUNIKATIONS-PROTOKOLL", expanded=True):
         chat_container = st.container(height=260)
         with chat_container:
