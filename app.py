@@ -38,7 +38,7 @@ def process_query(user_text):
         st.write(user_text)
 
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="llama-3.1-8b-instant",
         messages=st.session_state.messages,
         tools=TOOLS_SCHEMA,
         tool_choice="auto",
@@ -67,7 +67,7 @@ def process_query(user_text):
             })
 
         second_response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-8b-instant",
             messages=st.session_state.messages,
         )
         reply = second_response.choices[0].message.content
