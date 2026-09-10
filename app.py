@@ -8,7 +8,6 @@ st.set_page_config(page_title="J.A.R.V.I.S.", page_icon="🤖", layout="centered
 st.title("J.A.R.V.I.S. // Online Core")
 st.caption("Systemstatus: Online. Bereit für Ihre Anweisungen, Sir.")
 
-# API-Key laden
 raw_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY", "")
 GROQ_API_KEY = raw_key.strip() if raw_key else ""
 
@@ -18,12 +17,10 @@ if not GROQ_API_KEY:
 
 client = Groq(api_key=GROQ_API_KEY)
 
-# 1. Verfügbare Modelle live von Groq abfragen
 @st.cache_data(ttl=3600)
 def get_available_models():
     try:
         models_data = client.models.list()
-        # Nur Chat-Modelle filtern (Whisper STT ausschließen)
         chat_models = [m.id for m in models_data.data if "whisper" not in m.id.lower()]
         return sorted(chat_models)
     except Exception as e:
@@ -32,9 +29,10 @@ def get_available_models():
 
 available_models = get_available_models()
 
-# Dropdown zur Auswahl des aktiven Modells
 if available_models:
-    MODEL_NAME = st.sidebar.selectbox("Aktives Groq-Modell:", available_models)
+    # Standardmäßig openai/gpt-oss-120b wählen, falls in der Liste vorhanden
+    default_idx = available_models.index("openai/gpt-oss-120b") if "openai/gpt-oss-120b" in available_models else 0
+    MODEL_NAME = st.sidebar.selectbox("Aktives Groq-Modell:", available_models, index=default_idx)
 else:
     st.error("Keine verfügbaren Modelle für diesen API-Key gefunden.")
     st.stop()
@@ -49,10 +47,13 @@ Du bist J.A.R.V.I.S., die hochentwickelte KI von Sir.
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
+# Sicherer Chat-Verlauf: Funktioniert mit Objekten und Dictionaries
 for msg in st.session_state.messages[1:]:
-    if msg["role"] in ["user", "assistant"] and msg.get("content"):
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
+    role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else None)
+    content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
+    if role in ["user", "assistant"] and content:
+        with st.chat_message(role):
+            st.write(content)
 
 def process_query(user_text):
     st.session_state.messages.append({"role": "user", "content": user_text})
@@ -72,7 +73,9 @@ def process_query(user_text):
         tool_calls = response_message.tool_calls
 
         if tool_calls:
-            st.session_state.messages.append(response_message)
+            # Nachricht als Dictionary festhalten
+            st.session_state.messages.append(response_message.model_dump())
+            
             for tool_call in tool_calls:
                 func_name = tool_call.function.name
                 func_args = json.loads(tool_call.function.arguments)
