@@ -1,7 +1,11 @@
 import os
 import json
+import asyncio
+import io
 import streamlit as st
+import streamlit.components.v1 as components
 from groq import Groq
+import edge_tts
 from jarvis_tools import TOOLS_SCHEMA, TOOL_MAP
 
 st.set_page_config(page_title="J.A.R.V.I.S.", page_icon="🤖", layout="centered")
@@ -37,16 +41,32 @@ Du bist J.A.R.V.I.S., die hochentwickelte KI von Sir.
 3. Wenn der Nutzer nach Uhrzeit, Protokollen oder SpielerPlus fragt, rufe sofort die passenden Tools auf.
 """
 
-# Seitenleiste: Einstellungen & Reset
+# Seitenleiste: Einstellungen
 with st.sidebar:
-    st.header("Konfiguration")
+    st.header("Audio & Sensoren")
+    
+    # 1. ZUHÖREN: Standardmäßig AUSgeschaltet (value=False)
+    enable_wakeword = st.toggle("🎤 Raum abhören ('Hey Jarvis')", value=False)
+    
+    # 2. STIMMAUSWAHL
+    enable_tts = st.toggle("🔊 Sprachausgabe aktiv", value=True)
+    voice_option = st.selectbox(
+        "Jarvis-Stimme:",
+        [
+            "Deutsch (Conrad - Souverän/Tief)", 
+            "Englisch (Ryan - Britischer Jarvis-Originalton)"
+        ]
+    )
+    
+    st.divider()
+    st.header("Modell")
     if available_models:
         default_idx = available_models.index("openai/gpt-oss-120b") if "openai/gpt-oss-120b" in available_models else 0
         MODEL_NAME = st.selectbox("Aktives Modell:", available_models, index=default_idx)
     else:
         st.error("Keine Modelle gefunden.")
         st.stop()
-        
+
     if st.button("Chat zurücksetzen"):
         st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         st.rerun()
@@ -61,6 +81,30 @@ for msg in st.session_state.messages[1:]:
     if role in ["user", "assistant"] and content:
         with st.chat_message(role):
             st.write(content)
+
+async def generate_edge_speech(text: str, voice_name: str) -> bytes:
+    """Erzeugt hochwertige neuronale Sprachausgabe via edge-tts."""
+    communicate = edge_tts.Communicate(text, voice_name)
+    audio_data = b""
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_data += chunk["data"]
+    return audio_data
+
+def speak_text(text: str):
+    """Spielt die Jarvis-Stimme automatisch ab."""
+    try:
+        # Ausgewählte Stimme zuweisen
+        voice = "de-DE-ConradNeural" if "Deutsch" in voice_option else "en-GB-RyanNeural"
+        
+        # Audio asynchron erzeugen
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        audio_bytes = loop.run_until_complete(generate_edge_speech(text, voice))
+        
+        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+    except Exception as e:
+        st.caption(f"Audioausgabe temporär nicht verfügbar: {e}")
 
 def process_query(user_text):
     st.session_state.messages.append({"role": "user", "content": user_text})
@@ -126,13 +170,51 @@ def process_query(user_text):
         with st.chat_message("assistant"):
             st.write(reply)
 
+        if enable_tts and reply:
+            speak_text(reply)
+
     except Exception as e:
         st.error(f"Fehler bei Groq-Anfrage ({MODEL_NAME}): {e}")
 
-# 1. Spracheingabe (Audio-Widget vor dem Chat-Input)
-voice_audio = st.audio_input("Sprachnachricht aufnehmen")
+# HTML5 Web Speech Wake-Word-Engine (Wird NUR aktiv wenn Toggle an ist)
+if enable_wakeword:
+    components.html("""
+    <script>
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = false;
+        recognition.lang = 'de-DE';
 
-# 2. Text-Eingabefeld (Ganz außen auf Root-Ebene, nicht in Spalten!)
+        recognition.onresult = function(event) {
+            const last = event.results.length - 1;
+            const text = event.results[last][0].transcript.trim().toLowerCase();
+            
+            if (text.includes("jarvis") || text.includes("hey jarvis")) {
+                const chatInput = window.parent.document.querySelector('textarea[data-testid="stChatInputTextArea"]');
+                if (chatInput) {
+                    chatInput.value = text;
+                    chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    const enterEvent = new KeyboardEvent('keydown', {
+                        bubbles: true, cancelable: true, keyCode: 13, key: 'Enter'
+                    });
+                    chatInput.dispatchEvent(enterEvent);
+                }
+            }
+        };
+
+        recognition.onend = function() {
+            recognition.start();
+        };
+
+        recognition.start();
+    }
+    </script>
+    """, height=0)
+
+# Eingaben
+voice_audio = st.audio_input("Sprachnachricht aufnehmen")
 chat_text = st.chat_input("Befehl eingeben, Sir...")
 
 if chat_text:
