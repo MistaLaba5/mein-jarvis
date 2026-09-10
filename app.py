@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import streamlit as st
+import streamlit.components.v1 as components
 from groq import Groq
 import edge_tts
 from jarvis_tools import TOOLS_SCHEMA, TOOL_MAP
@@ -39,15 +40,14 @@ Du bist J.A.R.V.I.S., die hochentwickelte KI von Sir.
 3. Wenn der Nutzer nach Uhrzeit, Protokollen oder SpielerPlus fragt, rufe sofort die passenden Tools auf.
 """
 
-# Seitenleiste: Einstellungen
+# Seitenleiste: Standardmäßig AUS
 with st.sidebar:
-    st.header("Audio & Modell")
-    enable_tts = st.toggle("🔊 Sprachausgabe aktiv", value=True)
-    voice_option = st.selectbox(
-        "Jarvis-Stimme:",
-        ["Deutsch (Conrad)", "Englisch (Ryan)"]
-    )
-    
+    st.header("Audio-Einstellungen")
+    # 1. Beide Schalter standardmäßig auf False (AUS)
+    enable_wakeword = st.toggle("🎤 'Hey Jarvis' lauschen", value=False)
+    enable_tts = st.toggle("🔊 Sprachausgabe erlauben", value=False)
+    voice_option = st.selectbox("Jarvis-Stimme:", ["Deutsch (Conrad)", "Englisch (Ryan)"])
+
     st.divider()
     if available_models:
         default_idx = available_models.index("openai/gpt-oss-120b") if "openai/gpt-oss-120b" in available_models else 0
@@ -58,14 +58,14 @@ with st.sidebar:
 
     if st.button("Chat zurücksetzen"):
         st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        if "last_processed_audio" in st.session_state:
-            del st.session_state["last_processed_audio"]
+        if "pending_voice_cmd" in st.session_state:
+            del st.session_state["pending_voice_cmd"]
         st.rerun()
 
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-# Chat-Verlauf rendern
+# Chat-Verlauf anzeigen
 for msg in st.session_state.messages[1:]:
     role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else None)
     content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
@@ -91,7 +91,7 @@ def speak_text(text: str):
     except Exception as e:
         st.caption(f"Audioausgabe temporär nicht verfügbar: {e}")
 
-def process_query(user_text):
+def process_query(user_text, is_voice=False):
     st.session_state.messages.append({"role": "user", "content": user_text})
     with st.chat_message("user"):
         st.write(user_text)
@@ -155,51 +155,144 @@ def process_query(user_text):
         with st.chat_message("assistant"):
             st.write(reply)
 
-        if enable_tts and reply:
+        # SPRACHAUSGABE NUR WENN: Per Sprache gefragt UND TTS aktiviert ist!
+        if is_voice and enable_tts and reply:
             speak_text(reply)
 
     except Exception as e:
         st.error(f"Fehler bei Groq-Anfrage ({MODEL_NAME}): {e}")
 
-# HUD-Statusleiste
-st.markdown("""
-<div style="
+# HUD & Robuster Wake-Word Listener
+hud_html = f"""
+<div id="jarvis-hud" style="
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 14px;
+    padding: 10px 14px;
     margin-bottom: 12px;
-    border-radius: 6px;
-    background: #111827;
-    border: 1px solid #1f2937;
-    color: #94a3b8;
+    border-radius: 8px;
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    color: #e2e8f0;
+    font-family: monospace;
     font-size: 13px;
 ">
-    <div style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px #10b981;"></div>
-    <span>Audio-Interface bereit. Sprechen oder tippen.</span>
+    <div id="hud-dot" style="
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background-color: {'#10b981' if enable_wakeword else '#64748b'};
+        box-shadow: 0 0 8px {'#10b981' if enable_wakeword else 'transparent'};
+    "></div>
+    <span id="hud-status">{'Warte auf "Hey Jarvis"...' if enable_wakeword else 'Mikrofon inaktiv (im Seitenmenü einschalten)'}</span>
+    <span id="hud-text" style="margin-left: auto; color: #38bdf8;"></span>
 </div>
-""", unsafe_allow_html=True)
 
-# 1. Spracheingabe: Streamlits nativer Audio-Recorder
-audio_file = st.audio_input("Befehl per Sprache aufnehmen")
+<script>
+const active = {str(enable_wakeword).lower()};
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-if audio_file is not None:
-    audio_bytes = audio_file.read()
-    # Verhindert doppeltes Verarbeiten desselben Audios beim Re-Render
-    if st.session_state.get("last_processed_audio") != audio_bytes:
-        st.session_state["last_processed_audio"] = audio_bytes
-        with st.spinner("Transkribiere Sprache..."):
-            try:
-                transcription = client.audio.transcriptions.create(
-                    file=("voice.wav", audio_bytes),
-                    model="whisper-large-v3"
-                ).text
-                if transcription.strip():
-                    process_query(transcription)
-            except Exception as e:
-                st.error(f"Fehler bei Audio-Verarbeitung: {e}")
+if (active && SpeechRecognition) {{
+    const rec = new SpeechRecognition();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'de-DE';
 
-# 2. Texteingabe
+    const dot = document.getElementById('hud-dot');
+    const status = document.getElementById('hud-status');
+    const hudText = document.getElementById('hud-text');
+
+    let isListeningCommand = false;
+    let silenceTimeout = null;
+    let fullCommand = "";
+
+    rec.onresult = (event) => {{
+        let interim = "";
+        let final = "";
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {{
+            if (event.results[i].isFinal) final += event.results[i][0].transcript;
+            else interim += event.results[i][0].transcript;
+        }}
+
+        let raw = (final || interim).trim();
+        let lower = raw.toLowerCase();
+
+        // 1. Wake-Word Erkennung
+        if (!isListeningCommand && (lower.includes("hey jarvis") || lower.includes("jarvis"))) {{
+            isListeningCommand = true;
+            dot.style.backgroundColor = '#38bdf8';
+            dot.style.boxShadow = '0 0 12px #38bdf8';
+            status.innerText = "Höre zu, Sir...";
+            // Wake-Word aus dem Text entfernen
+            raw = raw.replace(/hey jarvis/gi, "").replace(/jarvis/gi, "").trim();
+        }}
+
+        // 2. Befehl aufzeichnen nach Wake-Word
+        if (isListeningCommand) {{
+            if (raw.length > 0) {{
+                fullCommand = raw;
+                hudText.innerText = '"' + fullCommand + '"';
+
+                // Automatisch absenden nach 1 Sekunde Sprechpause
+                clearTimeout(silenceTimeout);
+                silenceTimeout = setTimeout(() => {{
+                    if (fullCommand.trim().length > 0) {{
+                        // Streamlit Input-Element suchen und Event triggern
+                        const parentDoc = window.parent.document;
+                        const ta = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+                        if (ta) {{
+                            const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+                            nativeSetter.call(ta, "[VOICE] " + fullCommand);
+                            ta.dispatchEvent(new Event('input', {{ bubbles: true }}));
+
+                            setTimeout(() => {{
+                                const btn = parentDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
+                                if (btn) {{
+                                    btn.click();
+                                }} else {{
+                                    ta.dispatchEvent(new KeyboardEvent('keydown', {{
+                                        bubbles: true, cancelable: true, keyCode: 13, key: 'Enter'
+                                    }}));
+                                }}
+                            }}, 100);
+                        }}
+                        status.innerText = "Befehl übermittelt...";
+                        fullCommand = "";
+                        isListeningCommand = false;
+                        setTimeout(() => {{
+                            dot.style.backgroundColor = '#10b981';
+                            dot.style.boxShadow = '0 0 8px #10b981';
+                            status.innerText = 'Warte auf "Hey Jarvis"...';
+                            hudText.innerText = "";
+                        }}, 2000);
+                    }}
+                }}, 1100);
+            }}
+        }}
+    }};
+
+    rec.onend = () => {{
+        if (active) {{
+            try {{ rec.start(); }} catch(e) {{}}
+        }}
+    }};
+
+    try {{ rec.start(); }} catch(e) {{}}
+}}
+</script>
+"""
+
+components.html(hud_html, height=52)
+
+# Chat-Eingabe (Nimmt getippte Befehle oder automatische Wake-Word-Befehle an)
 chat_text = st.chat_input("Befehl eingeben, Sir...")
+
 if chat_text:
-    process_query(chat_text)
+    # Erkennen, ob der Befehl aus dem Mikrofon stammt
+    if chat_text.startswith("[VOICE]"):
+        clean_text = chat_text.replace("[VOICE]", "").strip()
+        process_query(clean_text, is_voice=True)
+    else:
+        # Getippter Chat -> Antwort bleibt stumm (nur Text)
+        process_query(chat_text, is_voice=False)
