@@ -22,7 +22,7 @@ client = Groq(
     base_url="https://api.groq.com"
 )
 
-MODEL_NAME = "llama-3.1-70b-versatile"
+MODEL_NAME = "mixtral-8x7b-32768"
 
 SYSTEM_PROMPT = """
 Du bist J.A.R.V.I.S., die hochentwickelte KI von Sir.
