@@ -14,7 +14,6 @@ st.caption("Systemstatus: Online. Bereit für Ihre Anweisungen, Sir.")
 
 CHAT_FILE = "chat_history.json"
 
-# --- Chat-Historie auf Festplatte sichern / laden ---
 def load_chat_history():
     if os.path.exists(CHAT_FILE):
         try:
@@ -31,7 +30,6 @@ def save_chat_history(messages):
     except Exception:
         pass
 
-# Groq initialisieren
 raw_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY", "")
 GROQ_API_KEY = raw_key.strip() if raw_key else ""
 if not GROQ_API_KEY:
@@ -53,21 +51,20 @@ def get_available_models():
 available_models = get_available_models()
 
 def build_system_prompt():
-    """Baut den System-Prompt inklusive des Langzeitgedächtnisses dynamically zusammen."""
     memories = get_all_memories()
     mem_text = "\n".join([f"- {k}: {v}" for k, v in memories.items()]) if memories else "Keine Einträge vorhanden."
     
     return f"""Du bist J.A.R.V.I.S., die hochentwickelte KI von Sir.
 1. Sprich den Nutzer stets diskret und respektvoll mit 'Sir' an.
 2. Sei präzise, loyal, trocken-humorvoll und halte dich extrem kurz (1-2 Sätze).
-3. Wenn Sir dir Fakten über sich, Vorlieben, Gewohnheiten oder Regeln mitteilt, rufe SOFORT 'save_memory' auf, um es dir dauerhaft einzuprägen.
-4. Nutze gespeicherte Fakten aktiv in deinen Antworten, um dich optimal an Sir anzupassen.
+3. Wenn Sir dir befiehlt schlafen zu gehen, leise zu sein oder den Ruhemodus zu aktivieren, rufe SOFORT 'run_protocol' mit protocol_name='ruhemodus' auf.
+4. Wenn Sir dir Fakten über sich mitteilt, rufe sofort 'save_memory' auf.
 
 Dauerhaftes Gedächtnis über Sir:
 {mem_text}
 """
 
-# Initialisierung der Messages aus der Datei
+# State-Initialisierung
 if "messages" not in st.session_state:
     saved = load_chat_history()
     if saved:
@@ -79,11 +76,24 @@ if "messages" not in st.session_state:
 if "latest_audio_b64" not in st.session_state:
     st.session_state.latest_audio_b64 = ""
 
+if "sleep_mode" not in st.session_state:
+    st.session_state.sleep_mode = False
+
 # Seitenleiste
 with st.sidebar:
     st.header("Audio & Sensoren")
-    enable_wakeword = st.toggle("🎤 'Hey Jarvis' lauschen", value=False)
-    enable_tts = st.toggle("🔊 Sprachausgabe erlauben", value=False)
+    
+    if st.session_state.sleep_mode:
+        st.warning("🌙 Ruhemodus aktiv")
+        if st.button("🔔 Jarvis aufwecken"):
+            st.session_state.sleep_mode = False
+            st.rerun()
+        enable_wakeword = False
+        enable_tts = False
+    else:
+        enable_wakeword = st.toggle("🎤 'Hey Jarvis' lauschen", value=False)
+        enable_tts = st.toggle("🔊 Sprachausgabe erlauben", value=False)
+
     voice_option = st.selectbox("Jarvis-Stimme:", ["Deutsch (Conrad)", "Englisch (Ryan)"])
 
     st.divider()
@@ -108,6 +118,7 @@ with st.sidebar:
             os.remove(CHAT_FILE)
         st.session_state.messages = [{"role": "system", "content": build_system_prompt()}]
         st.session_state.latest_audio_b64 = ""
+        st.session_state.sleep_mode = False
         st.rerun()
 
 async def generate_edge_speech(text: str, voice_name: str) -> bytes:
@@ -119,7 +130,11 @@ async def generate_edge_speech(text: str, voice_name: str) -> bytes:
     return audio_data
 
 def process_query(user_text, is_voice=False):
-    # System-Prompt immer mit aktuellem Wissensstand abgleichen
+    # Wenn der Nutzer ihn per Text aufwecken will
+    if st.session_state.sleep_mode:
+        if any(w in user_text.lower() for w in ["aufwachen", "wake up", "hallo", "guten morgen", "online"]):
+            st.session_state.sleep_mode = False
+
     st.session_state.messages[0] = {"role": "system", "content": build_system_prompt()}
     st.session_state.messages.append({"role": "user", "content": user_text})
 
@@ -134,6 +149,7 @@ def process_query(user_text, is_voice=False):
 
         response_message = response.choices[0].message
         tool_calls = response_message.tool_calls
+        triggered_sleep = False
 
         if tool_calls:
             clean_tool_calls = [
@@ -163,6 +179,9 @@ def process_query(user_text, is_voice=False):
                 else:
                     function_output = "Funktion nicht verfügbar."
 
+                if "TRIGGER_SLEEP_MODE" in str(function_output):
+                    triggered_sleep = True
+
                 st.session_state.messages.append({
                     "tool_call_id": tool_call.id,
                     "role": "tool",
@@ -181,7 +200,12 @@ def process_query(user_text, is_voice=False):
         st.session_state.messages.append({"role": "assistant", "content": reply})
         save_chat_history(st.session_state.messages)
 
-        if is_voice and enable_tts and reply:
+        # Wenn Ruhemodus ausgelöst wurde: State umschalten
+        if triggered_sleep:
+            st.session_state.sleep_mode = True
+
+        # Letzte Antwort vertonen (auch die Verabschiedung in den Ruhemodus)
+        if (is_voice or triggered_sleep) and (enable_tts or triggered_sleep) and reply:
             voice = "de-DE-ConradNeural" if "Deutsch" in voice_option else "en-GB-RyanNeural"
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -193,7 +217,7 @@ def process_query(user_text, is_voice=False):
     except Exception as e:
         st.error(f"Fehler bei Groq-Anfrage ({MODEL_NAME}): {e}")
 
-# Eingabe-Handling
+# Chat-Eingabe
 chat_text = st.chat_input("Befehl eingeben, Sir...")
 
 if chat_text:
@@ -205,8 +229,9 @@ if chat_text:
 
 audio_payload = st.session_state.latest_audio_b64
 st.session_state.latest_audio_b64 = ""
+is_sleep = st.session_state.sleep_mode
 
-# HUD Rendering
+# HUD Komponente
 hud_html = f"""
 <div id="jarvis-hud" style="
     display: flex;
@@ -225,19 +250,20 @@ hud_html = f"""
         width: 10px;
         height: 10px;
         border-radius: 50%;
-        background-color: {'#10b981' if enable_wakeword else '#64748b'};
-        box-shadow: 0 0 8px {'#10b981' if enable_wakeword else 'transparent'};
+        background-color: {'#ef4444' if is_sleep else ('#10b981' if enable_wakeword else '#64748b')};
+        box-shadow: 0 0 8px {'#ef4444' if is_sleep else ('#10b981' if enable_wakeword else 'transparent')};
     "></div>
-    <span id="hud-status">{'Warte auf "Hey Jarvis"...' if enable_wakeword else 'Mikrofon inaktiv (im Seitenmenü einschalten)'}</span>
+    <span id="hud-status">{'🌙 Ruhemodus aktiv – Alle Sensoren offline' if is_sleep else ('Warte auf "Hey Jarvis"...' if enable_wakeword else 'Mikrofon inaktiv')}</span>
     <span id="hud-text" style="margin-left: auto; color: #38bdf8;"></span>
 </div>
 
 <script>
-const active = {str(enable_wakeword).lower()};
+const isSleep = {str(is_sleep).lower()};
+const active = {str(enable_wakeword).lower()} && !isSleep;
 const audioB64 = "{audio_payload}";
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-if (active && SpeechRecognition) {{
+if (SpeechRecognition) {{
     const rec = new SpeechRecognition();
     rec.continuous = true;
     rec.interimResults = true;
@@ -262,6 +288,7 @@ if (active && SpeechRecognition) {{
     }}
 
     function startFollowUp() {{
+        if (isSleep) return;
         isListeningCommand = true;
         dot.style.backgroundColor = '#38bdf8';
         dot.style.boxShadow = '0 0 12px #38bdf8';
@@ -275,31 +302,37 @@ if (active && SpeechRecognition) {{
         }}, 7000);
     }}
 
+    // Wenn Audio vorhanden ist: Abspielen
     if (audioB64.length > 0) {{
         isSpeaking = true;
         dot.style.backgroundColor = '#a855f7';
         dot.style.boxShadow = '0 0 10px #a855f7';
         status.innerText = "Jarvis spricht...";
 
-        try {{ rec.stop(); }} catch(e) {{}}
-
         const audio = new Audio("data:audio/mp3;base64," + audioB64);
         audio.play().catch(() => {{
             isSpeaking = false;
-            startFollowUp();
+            if (!isSleep) startFollowUp();
         }});
 
         audio.onended = () => {{
             isSpeaking = false;
-            try {{ rec.start(); }} catch(e) {{}}
-            startFollowUp();
+            if (isSleep) {{
+                dot.style.backgroundColor = '#ef4444';
+                dot.style.boxShadow = '0 0 8px #ef4444';
+                status.innerText = '🌙 Ruhemodus aktiv – Alle Sensoren offline';
+                try {{ rec.stop(); }} catch(e) {{}}
+            }} else {{
+                try {{ rec.start(); }} catch(e) {{}}
+                startFollowUp();
+            }}
         }};
-    }} else {{
+    }} else if (active) {{
         try {{ rec.start(); }} catch(e) {{}}
     }}
 
     rec.onresult = (event) => {{
-        if (isSpeaking) return;
+        if (isSpeaking || isSleep) return;
 
         let interim = "";
         let final = "";
@@ -359,7 +392,7 @@ if (active && SpeechRecognition) {{
     }};
 
     rec.onend = () => {{
-        if (active && !isSpeaking) {{
+        if (active && !isSpeaking && !isSleep) {{
             try {{ rec.start(); }} catch(e) {{}}
         }}
     }};
