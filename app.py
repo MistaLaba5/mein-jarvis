@@ -6,7 +6,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 from groq import Groq
 import edge_tts
-from gradio_client import Client
 from jarvis_tools import TOOLS_SCHEMA, TOOL_MAP, get_all_memories
 
 st.set_page_config(page_title="J.A.R.V.I.S.", page_icon="🤖", layout="centered")
@@ -57,10 +56,11 @@ def build_system_prompt():
     
     return f"""Du bist J.A.R.V.I.S., die hochentwickelte KI von Sir.
 1. Sprich den Nutzer stets diskret und loyal mit 'Sir' an.
-2. SPRACHE: Antworte IMMER exakt in der Sprache, in der Sir dich anspricht. Spricht Sir Englisch, antworte auf Englisch. Spricht Sir Deutsch, antworte auf Deutsch.
+2. SPRACHE: Antworte IMMER exakt in der Sprache, in der Sir dich anspricht (Deutsch -> Deutsch, Englisch -> Englisch).
 3. Sei präzise, loyal, trocken-humorvoll und halte dich extrem kurz (1-2 Sätze).
-4. Wenn Sir dir befiehlt schlafen zu gehen, leise zu sein oder den Ruhemodus zu aktivieren, rufe SOFORT 'run_protocol' mit protocol_name='ruhemodus' auf.
-5. Wenn Sir dir Fakten über sich mitteilt, rufe sofort 'save_memory' auf.
+4. Gib niemals interne Denkprozesse oder Meta-Kommentare aus.
+5. Wenn Sir dir befiehlt schlafen zu gehen, leise zu sein oder den Ruhemodus zu aktivieren, rufe SOFORT 'run_protocol' mit protocol_name='ruhemodus' auf.
+6. Wenn Sir dir Fakten über sich mitteilt, rufe sofort 'save_memory' auf.
 
 Dauerhaftes Gedächtnis über Sir:
 {mem_text}
@@ -144,39 +144,15 @@ async def generate_edge_voice(text: str, voice_name: str, rate: str = "-3%", pit
     return audio_data
 
 def generate_voice_audio(text: str) -> bytes:
-    """Nutzt MeloTTS für Deutsch und Kokoro-82M für Englisch."""
+    """Blitzschnelle, stabile Sprachausgabe ohne externe Hänger."""
     lang = detect_language(text)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    hf_token = st.secrets.get("HF_TOKEN")
 
     if lang == "de":
-        if hf_token:
-            try:
-                melo_client = Client("myshell-ai/MeloTTS", hf_token=hf_token)
-                result = melo_client.predict(
-                    text=text,
-                    language="DE",
-                    speaker="DE-Default",
-                    speed=0.95,
-                    api_name="/synthesize"
-                )
-                with open(result, "rb") as f:
-                    return f.read()
-            except Exception:
-                pass
-        return loop.run_until_complete(generate_edge_voice(text, "de-DE-KillianNeural"))
-
+        return loop.run_until_complete(generate_edge_voice(text, "de-DE-KillianNeural", rate="-3%", pitch="-4Hz"))
     else:
-        if hf_token:
-            try:
-                hf_client = Client("hexgrad/Kokoro-82M", hf_token=hf_token)
-                result = hf_client.predict(text=text, voice="bm_george")
-                with open(result, "rb") as f:
-                    return f.read()
-            except Exception:
-                pass
-        return loop.run_until_complete(generate_edge_voice(text, "en-GB-RyanNeural"))
+        return loop.run_until_complete(generate_edge_voice(text, "en-GB-RyanNeural", rate="-2%", pitch="-2Hz"))
 
 def process_query(user_text, is_voice=False):
     if st.session_state.sleep_mode:
@@ -187,7 +163,6 @@ def process_query(user_text, is_voice=False):
     st.session_state.messages.append({"role": "user", "content": user_text})
 
     try:
-        # Request-Parameter zusammenstellen
         req_params = {
             "model": MODEL_NAME,
             "messages": st.session_state.messages,
@@ -195,9 +170,9 @@ def process_query(user_text, is_voice=False):
             "tool_choice": "auto",
             "temperature": 0.5,
         }
-        # Denkprozesse bei Reasoning-Modellen wie GPT-OSS stummschalten
-        if "gpt-oss" in MODEL_NAME or "qwen" in MODEL_NAME:
-            req_params["extra_body"] = {"reasoning_format": "hidden"}
+        # Sauberes Stummschalten von Denkprozessen bei GPT-OSS
+        if "gpt-oss" in MODEL_NAME:
+            req_params["extra_body"] = {"include_reasoning": False}
 
         response = client.chat.completions.create(**req_params)
 
@@ -247,18 +222,18 @@ def process_query(user_text, is_voice=False):
                 "model": MODEL_NAME,
                 "messages": st.session_state.messages,
             }
-            if "gpt-oss" in MODEL_NAME or "qwen" in MODEL_NAME:
-                second_params["extra_body"] = {"reasoning_format": "hidden"}
+            if "gpt-oss" in MODEL_NAME:
+                second_params["extra_body"] = {"include_reasoning": False}
 
             second_response = client.chat.completions.create(**second_params)
             reply = second_response.choices[0].message.content
         else:
             reply = response_message.content
 
-        # Zusätzliche Absicherung: Denk-Tags herausfiltern, falls noch Reste durchkommen
-        if "</think>" in reply:
+        # Zusätzlicher Filter gegen Reste
+        if reply and "</think>" in reply:
             reply = reply.split("</think>")[-1].strip()
-        if "Thus final." in reply:
+        if reply and "Thus final." in reply:
             reply = reply.split("Thus final.")[-1].strip()
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
