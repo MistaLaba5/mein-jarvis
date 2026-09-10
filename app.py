@@ -12,7 +12,7 @@ from jarvis_tools import TOOLS_SCHEMA, TOOL_MAP, get_all_memories, list_calendar
 
 st.set_page_config(page_title="J.A.R.V.I.S. HUD", page_icon="🤖", layout="wide")
 
-# --- Futuristische Sci-Fi Stylesheet ---
+# --- Futuristische Sci-Fi Stylesheet mit flexiblen Overlays ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@500;600;700&display=swap');
@@ -28,22 +28,38 @@ st.markdown("""
         font-family: 'Rajdhani', sans-serif;
     }
 
-    /* RECHTES OVERLAY-FENSTER (Protokoll) */
+    /* LINKE SIDEBAR ALS OVERLAY: Schiebt den Hauptinhalt nicht mehr zur Seite */
+    section[data-testid="stSidebar"] {
+        position: absolute !important;
+        z-index: 99999 !important;
+        height: 100vh !important;
+        background: rgba(3, 14, 28, 0.97) !important;
+        border-right: 1px solid rgba(0, 240, 255, 0.35) !important;
+        box-shadow: 10px 0 35px rgba(0, 0, 0, 0.85) !important;
+    }
+    
+    /* Hauptcontainer erzwingt volle Breite, damit HUD immer zu 100% mittig bleibt */
+    section.main {
+        margin-left: 0 !important;
+        width: 100% !important;
+    }
+
+    /* RECHTES OVERLAY-FENSTER (Protokoll - exakt wie links) */
     .right-drawer-overlay {
-        position: fixed;
-        top: 0;
-        right: 0;
-        width: 380px;
-        max-width: 90vw;
-        height: 100vh;
-        background: rgba(3, 14, 28, 0.98);
-        border-left: 1px solid rgba(0, 240, 255, 0.35);
-        box-shadow: -10px 0 35px rgba(0, 0, 0, 0.85);
-        backdrop-filter: blur(16px);
-        z-index: 99999;
-        padding: 24px 18px;
-        overflow-y: auto;
-        animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        position: fixed !important;
+        top: 0 !important;
+        right: 0 !important;
+        width: 360px !important;
+        max-width: 90vw !important;
+        height: 100vh !important;
+        background: rgba(3, 14, 28, 0.97) !important;
+        border-left: 1px solid rgba(0, 240, 255, 0.35) !important;
+        box-shadow: -10px 0 35px rgba(0, 0, 0, 0.85) !important;
+        backdrop-filter: blur(16px) !important;
+        z-index: 99999 !important;
+        padding: 24px 18px !important;
+        overflow-y: auto !important;
+        animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
     }
 
     @keyframes slideInRight {
@@ -159,7 +175,7 @@ if "sleep_mode" not in st.session_state:
 if "show_protocol" not in st.session_state:
     st.session_state.show_protocol = False
 
-# --- LINKE SIDEBAR (Natives Streamlit, klappt normal ein) ---
+# --- LINKE SIDEBAR ---
 with st.sidebar:
     st.markdown("<h3 style='font-family: Orbitron; color: #00f0ff;'>⚙️ SYSTEM CONTROL</h3>", unsafe_allow_html=True)
     
@@ -290,20 +306,29 @@ def process_query(user_text, is_voice=False):
     except Exception as e:
         st.error(f"Fehler: {e}")
 
-# --- PROTOKOLL BUTTON OBEN RECHTS ---
-col_empty, col_btn = st.columns([8.8, 1.2])
+# --- SCHALTER FÜR DAS RECHTE PROTOKOLL-FENSTER (Oben rechts im Eck) ---
+col_empty, col_btn = st.columns([9.2, 0.8])
 with col_btn:
     if not st.session_state.show_protocol:
         if st.button("🗨️ PROTOKOLL", use_container_width=True):
             st.session_state.show_protocol = True
             st.rerun()
 
-# --- RECHTES PROTOKOLL-OVERLAY ---
+# --- RECHTES PROTOKOLL-OVERLAY (Sicherer Inject-Trick ohne Layout-Bruch) ---
 if st.session_state.show_protocol:
-    st.markdown('<div class="right-drawer-overlay">', unsafe_allow_html=True)
-    
-    # Custom HTML Container für Streamlit Widgets im Overlay
-    with st.container():
+    proto_container = st.container()
+    with proto_container:
+        # Dieser kleine Script-Block verwandelt das aktuelle Container-Div in das rechte Sidebar-Overlay
+        components.html("""
+        <script>
+            const frame = window.frameElement;
+            if (frame) {
+                const block = frame.closest('div[data-testid="stVerticalBlock"]');
+                if (block) { block.classList.add('right-drawer-overlay'); }
+            }
+        </script>
+        """, height=0, width=0)
+        
         h_col1, h_col2 = st.columns([0.8, 0.2])
         with h_col1:
             st.markdown("<h3 style='font-family: Orbitron; color: #00f0ff; margin:0;'>💬 PROTOKOLL</h3>", unsafe_allow_html=True)
@@ -313,7 +338,7 @@ if st.session_state.show_protocol:
                 st.rerun()
         st.divider()
 
-        chat_history_container = st.container(height=550)
+        chat_history_container = st.container(height=650)
         with chat_history_container:
             for msg in st.session_state.messages[1:]:
                 role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else None)
@@ -321,7 +346,6 @@ if st.session_state.show_protocol:
                 if role in ["user", "assistant"] and content:
                     with st.chat_message(role):
                         st.write(content)
-    st.markdown('</div>', unsafe_allow_html=True)
 
 # --- FEST SYMMETRISCHES HUD-LAYOUT ---
 col_left, col_center, col_right = st.columns([3.2, 5.6, 3.2])
@@ -373,7 +397,7 @@ with col_left:
     """, unsafe_allow_html=True)
 
 
-# === MITTLERE SPALTE: REINES HOLOGRAMM MIT LIVE GESCHWINDIGKEITEN ===
+# === MITTLERE SPALTE: REINES HOLOGRAMM (KOMPLETT OHNE TEXT) ===
 with col_center:
     audio_payload = st.session_state.latest_audio_b64
     st.session_state.latest_audio_b64 = ""
@@ -382,22 +406,18 @@ with col_center:
     hud_template = """
     <div style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%;">
         
-        <!-- Minimalistisches Mikrofon-Icon oben rechts im Zentrum -->
-        <div style="position: absolute; top: 8px; right: 28px; z-index: 10;">
+        <!-- Winziges, unsichtbares Mikrofon-Icon oben rechts (ohne Border, ohne Background) -->
+        <div style="position: absolute; top: 0px; right: 20px; z-index: 10;">
             <button id="btn-hud-mic" onclick="toggleHudMic()" style="
                 background: transparent;
-                border: 1px solid rgba(0, 240, 255, 0.35);
-                border-radius: 50%;
-                width: 32px;
-                height: 32px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
+                border: none;
+                outline: none;
                 cursor: pointer;
+                padding: 8px;
+                opacity: 0.6;
                 transition: all 0.3s ease;
-                padding: 0;
             " title="Mikrofon stummschalten / aktivieren">
-                <svg id="svg-mic-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg id="svg-mic-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
                     <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
                     <line x1="12" y1="19" x2="12" y2="22"></line>
@@ -406,7 +426,7 @@ with col_center:
             </button>
         </div>
 
-        <!-- Arc Reactor Hologramm (Komplett ohne Text) -->
+        <!-- Arc Reactor Hologramm (Komplett ohne jegliche Text-Badges!) -->
         <div id="reactor-wrapper" onclick="triggerListenDirectly()" style="cursor: pointer; position: relative; width: 340px; height: 340px; display: flex; align-items: center; justify-content: center;" title="Klicken für Sofortbefehl">
             <svg id="arc-reactor" viewBox="0 0 400 400" width="340" height="340">
                 <line x1="200" y1="10" x2="200" y2="35" stroke="var(--hud-stroke, #00f0ff)" stroke-width="2" opacity="0.6" />
@@ -417,13 +437,11 @@ with col_center:
                 <circle cx="200" cy="200" r="186" fill="none" stroke="rgba(0, 240, 255, 0.15)" stroke-width="1.5" />
                 <circle cx="200" cy="200" r="176" fill="none" stroke="rgba(0, 240, 255, 0.25)" stroke-dasharray="2, 6" />
 
-                <!-- Äußerer Schildring -->
                 <g id="ring-outer-blocks" style="transform-origin: 200px 200px; animation: spinClockwise var(--spin-outer, 32s) linear infinite;">
                     <circle cx="200" cy="200" r="156" fill="none" stroke="var(--hud-stroke, #00f0ff)" stroke-width="10" stroke-dasharray="60, 25, 40, 20, 80, 30" opacity="0.85" />
                     <circle cx="200" cy="200" r="142" fill="none" stroke="var(--hud-stroke, #00f0ff)" stroke-width="1.5" stroke-dasharray="6, 8" opacity="0.6" />
                 </g>
 
-                <!-- Mittlerer Zahnkranz -->
                 <g id="ring-mid-gears" style="transform-origin: 200px 200px; animation: spinCounter var(--spin-mid, 18s) linear infinite;">
                     <circle cx="200" cy="200" r="122" fill="none" stroke="var(--hud-stroke-sec, #38bdf8)" stroke-width="5" stroke-dasharray="20, 10, 10, 10" opacity="0.9" />
                     <circle cx="200" cy="200" r="106" fill="none" stroke="var(--hud-stroke-sec, #38bdf8)" stroke-width="2" stroke-dasharray="4, 6" />
@@ -431,7 +449,6 @@ with col_center:
 
                 <circle id="wave-reactive-ring" cx="200" cy="200" r="92" fill="none" stroke="var(--hud-stroke, #00f0ff)" stroke-width="2" opacity="0.4" style="transform-origin: 200px 200px;" />
 
-                <!-- Innerer Justierungs-Ring -->
                 <g id="ring-inner" style="transform-origin: 200px 200px; animation: spinClockwise var(--spin-inner, 10s) linear infinite;">
                     <circle cx="200" cy="200" r="74" fill="none" stroke="var(--hud-stroke, #00f0ff)" stroke-width="2" stroke-dasharray="18, 8, 30, 8" />
                 </g>
@@ -444,7 +461,7 @@ with col_center:
             </svg>
         </div>
 
-        <!-- Kybernetische Unterleiste -->
+        <!-- Kybernetische Unterleiste (Einfache Deko-Ringe) -->
         <div style="display: flex; gap: 8px; margin-top: 14px; opacity: 0.65;">
             <svg width="20" height="20" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="2" stroke-dasharray="15, 10"/></svg>
             <svg width="20" height="20" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="1.5" stroke-dasharray="8, 6"/></svg>
@@ -491,7 +508,7 @@ with col_center:
     const coreCenter = document.getElementById('core-center');
     const waveRing = document.getElementById('wave-reactive-ring');
     const slashLine = document.getElementById('mic-slash-line');
-    const btnMic = document.getElementById('btn-hud-mic');
+    const svgMic = document.getElementById('svg-mic-icon');
 
     function applyState(mode) {
         if (mode === 'sleep') {
@@ -508,18 +525,18 @@ with col_center:
             root.style.setProperty('--hud-stroke', '#38bdf8');
             root.style.setProperty('--hud-stroke-sec', '#0284c7');
             root.style.setProperty('--hud-fill', 'rgba(56, 189, 248, 0.25)');
-            root.style.setProperty('--spin-outer', '3s');
-            root.style.setProperty('--spin-mid', '2s');
-            root.style.setProperty('--spin-inner', '1.5s');
+            root.style.setProperty('--spin-outer', '2.5s');
+            root.style.setProperty('--spin-mid', '1.5s');
+            root.style.setProperty('--spin-inner', '0.8s');
             coreGlow.style.animation = 'smoothPulse 0.4s ease-in-out infinite';
         } else if (mode === 'speaking') {
-            // ANTWORT (Jarvis spricht): Normale Rotation + Magenta
+            // ANTWORT (Jarvis spricht): Normale Rotation + Magenta (Audiowave läuft zusätzlich)
             root.style.setProperty('--hud-stroke', '#c084fc');
             root.style.setProperty('--hud-stroke-sec', '#a855f7');
             root.style.setProperty('--hud-fill', 'rgba(192, 132, 252, 0.2)');
-            root.style.setProperty('--spin-outer', '20s');
-            root.style.setProperty('--spin-mid', '12s');
-            root.style.setProperty('--spin-inner', '7s');
+            root.style.setProperty('--spin-outer', '24s');
+            root.style.setProperty('--spin-mid', '14s');
+            root.style.setProperty('--spin-inner', '8s');
             coreGlow.style.animation = 'none';
         } else if (mode === 'listening') {
             // SPRECHEN (Sir spricht): Pulsierend Gelb
@@ -545,11 +562,11 @@ with col_center:
     function updateMicUI() {
         if (isMuted) {
             slashLine.style.display = 'block';
-            btnMic.style.borderColor = '#ef4444';
+            svgMic.style.stroke = '#ef4444';
             applyState('standby');
         } else {
             slashLine.style.display = 'none';
-            btnMic.style.borderColor = 'rgba(0, 240, 255, 0.35)';
+            svgMic.style.stroke = '#00f0ff';
             applyState(isSleep ? 'sleep' : 'standby');
         }
     }
@@ -565,7 +582,7 @@ with col_center:
     if (isSleep) applyState('sleep');
     else applyState('standby');
 
-    // Web Audio API Waveform
+    // --- Web Audio API Waveform ---
     let audioCtx = null;
     let animFrame = null;
 
@@ -638,7 +655,7 @@ with col_center:
         }
     }
 
-    // Follow-Up Fenster (7 Sekunden)
+    // --- Follow-Up Zuhören nach der Antwort (7 Sekunden) ---
     let followUpTimer = null;
     function startFollowUp() {
         if (isSleep || isMuted) {
@@ -661,7 +678,7 @@ with col_center:
         }, 7000);
     }
 
-    // Spracherkennung (Komplett ohne Text-Transkription)
+    // --- Spracherkennung (VOLLKOMMEN TEXT-FREI) ---
     let rec = null;
     let isListeningCommand = false;
     let silenceTimeout = null;
@@ -696,7 +713,7 @@ with col_center:
             if (isSleep) {
                 if (wakeWords.some(w => lower.includes(w))) {
                     isSleep = false;
-                    applyState('processing'); // Dreht sofort ultra-schnell
+                    applyState('processing'); // Rotiert sofort blitzschnell
                     sendTextCommand("Hey Jarvis aufwachen");
                 }
                 return;
@@ -718,7 +735,7 @@ with col_center:
                     clearTimeout(silenceTimeout);
                     silenceTimeout = setTimeout(() => {
                         if (fullCommand.trim().length > 0) {
-                            applyState('processing'); // Schnelles Drehen während Jarvis nachdenkt!
+                            applyState('processing'); // Die Ringe fangen extrem schnell an zu drehen!
                             sendTextCommand(fullCommand);
                             fullCommand = "";
                             isListeningCommand = false;
@@ -735,6 +752,7 @@ with col_center:
         };
     }
 
+    // Übergabe des akustischen Befehls in das verborgene Streamlit-Eingabefeld
     function sendTextCommand(cmd) {
         const parentDoc = window.parent.document;
         const ta = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
@@ -755,6 +773,7 @@ with col_center:
         }
     }
 
+    // Ermöglicht direktes Sprechen durch Klick in die Mitte
     window.triggerListenDirectly = function() {
         if (isSleep) {
             isSleep = false;
@@ -806,7 +825,7 @@ with col_right:
     </div>
     """, unsafe_allow_html=True)
 
-# Globale Befehlseingabe
+# Globale Befehlseingabe (Für Tastatureingaben)
 chat_text = st.chat_input("Befehl an J.A.R.V.I.S., Sir...")
 if chat_text:
     if chat_text.startswith("[VOICE]"):
