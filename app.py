@@ -6,18 +6,36 @@ import streamlit as st
 import streamlit.components.v1 as components
 from groq import Groq
 import edge_tts
-from jarvis_tools import TOOLS_SCHEMA, TOOL_MAP
+from jarvis_tools import TOOLS_SCHEMA, TOOL_MAP, get_all_memories
 
 st.set_page_config(page_title="J.A.R.V.I.S.", page_icon="🤖", layout="centered")
 st.title("J.A.R.V.I.S.")
 st.caption("Systemstatus: Online. Bereit für Ihre Anweisungen, Sir.")
 
-# API-Key laden
+CHAT_FILE = "chat_history.json"
+
+# --- Chat-Historie auf Festplatte sichern / laden ---
+def load_chat_history():
+    if os.path.exists(CHAT_FILE):
+        try:
+            with open(CHAT_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return []
+
+def save_chat_history(messages):
+    try:
+        with open(CHAT_FILE, "w", encoding="utf-8") as f:
+            json.dump(messages, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+# Groq initialisieren
 raw_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY", "")
 GROQ_API_KEY = raw_key.strip() if raw_key else ""
-
 if not GROQ_API_KEY:
-    st.error("API-Key fehlt! Bitte trage deinen GROQ_API_KEY in den Streamlit Secrets ein.")
+    st.error("API-Key fehlt! Bitte in den Secrets hinterlegen.")
     st.stop()
 
 client = Groq(api_key=GROQ_API_KEY)
@@ -34,16 +52,29 @@ def get_available_models():
 
 available_models = get_available_models()
 
-SYSTEM_PROMPT = """
-Du bist J.A.R.V.I.S., die hochentwickelte KI von Sir.
+def build_system_prompt():
+    """Baut den System-Prompt inklusive des Langzeitgedächtnisses dynamically zusammen."""
+    memories = get_all_memories()
+    mem_text = "\n".join([f"- {k}: {v}" for k, v in memories.items()]) if memories else "Keine Einträge vorhanden."
+    
+    return f"""Du bist J.A.R.V.I.S., die hochentwickelte KI von Sir.
 1. Sprich den Nutzer stets diskret und respektvoll mit 'Sir' an.
 2. Sei präzise, loyal, trocken-humorvoll und halte dich extrem kurz (1-2 Sätze).
-3. Wenn der Nutzer nach Uhrzeit, Protokollen oder SpielerPlus fragt, rufe sofort die passenden Tools auf.
+3. Wenn Sir dir Fakten über sich, Vorlieben, Gewohnheiten oder Regeln mitteilt, rufe SOFORT 'save_memory' auf, um es dir dauerhaft einzuprägen.
+4. Nutze gespeicherte Fakten aktiv in deinen Antworten, um dich optimal an Sir anzupassen.
+
+Dauerhaftes Gedächtnis über Sir:
+{mem_text}
 """
 
-# State-Initialisierung
+# Initialisierung der Messages aus der Datei
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    saved = load_chat_history()
+    if saved:
+        saved[0] = {"role": "system", "content": build_system_prompt()}
+        st.session_state.messages = saved
+    else:
+        st.session_state.messages = [{"role": "system", "content": build_system_prompt()}]
 
 if "latest_audio_b64" not in st.session_state:
     st.session_state.latest_audio_b64 = ""
@@ -56,6 +87,15 @@ with st.sidebar:
     voice_option = st.selectbox("Jarvis-Stimme:", ["Deutsch (Conrad)", "Englisch (Ryan)"])
 
     st.divider()
+    st.header("Langzeitgedächtnis")
+    current_memories = get_all_memories()
+    if current_memories:
+        for k, v in current_memories.items():
+            st.text(f"• {k}: {v}")
+    else:
+        st.caption("Noch keine Fakten gelernt.")
+
+    st.divider()
     if available_models:
         default_idx = available_models.index("openai/gpt-oss-120b") if "openai/gpt-oss-120b" in available_models else 0
         MODEL_NAME = st.selectbox("Aktives Modell:", available_models, index=default_idx)
@@ -63,8 +103,10 @@ with st.sidebar:
         st.error("Keine Modelle gefunden.")
         st.stop()
 
-    if st.button("Chat zurücksetzen"):
-        st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if st.button("Chat-Verlauf löschen"):
+        if os.path.exists(CHAT_FILE):
+            os.remove(CHAT_FILE)
+        st.session_state.messages = [{"role": "system", "content": build_system_prompt()}]
         st.session_state.latest_audio_b64 = ""
         st.rerun()
 
@@ -77,6 +119,8 @@ async def generate_edge_speech(text: str, voice_name: str) -> bytes:
     return audio_data
 
 def process_query(user_text, is_voice=False):
+    # System-Prompt immer mit aktuellem Wissensstand abgleichen
+    st.session_state.messages[0] = {"role": "system", "content": build_system_prompt()}
     st.session_state.messages.append({"role": "user", "content": user_text})
 
     try:
@@ -135,8 +179,8 @@ def process_query(user_text, is_voice=False):
             reply = response_message.content
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
+        save_chat_history(st.session_state.messages)
 
-        # Nur bei Spracheingabe Audio erzeugen
         if is_voice and enable_tts and reply:
             voice = "de-DE-ConradNeural" if "Deutsch" in voice_option else "en-GB-RyanNeural"
             loop = asyncio.new_event_loop()
@@ -149,7 +193,7 @@ def process_query(user_text, is_voice=False):
     except Exception as e:
         st.error(f"Fehler bei Groq-Anfrage ({MODEL_NAME}): {e}")
 
-# 1. Eingabe VOR dem Rendern des HUDs abfangen
+# Eingabe-Handling
 chat_text = st.chat_input("Befehl eingeben, Sir...")
 
 if chat_text:
@@ -159,11 +203,10 @@ if chat_text:
     else:
         process_query(chat_text, is_voice=False)
 
-# 2. Audio-Daten für diesen Durchlauf holen und State leeren
 audio_payload = st.session_state.latest_audio_b64
 st.session_state.latest_audio_b64 = ""
 
-# 3. HUD-Komponente rendern
+# HUD Rendering
 hud_html = f"""
 <div id="jarvis-hud" style="
     display: flex;
@@ -229,10 +272,9 @@ if (active && SpeechRecognition) {{
             if (isListeningCommand && fullCommand.trim().length === 0) {{
                 setStandby();
             }}
-        }}, 7000); // 7 Sekunden Reaktionszeit
+        }}, 7000);
     }}
 
-    // Wenn Jarvis eine Sprachantwort mitliefert: Abspielen und Mikrofon stummschalten
     if (audioB64.length > 0) {{
         isSpeaking = true;
         dot.style.backgroundColor = '#a855f7';
@@ -270,7 +312,6 @@ if (active && SpeechRecognition) {{
         let raw = (final || interim).trim();
         let lower = raw.toLowerCase();
 
-        // Wake-Word abfangen, falls noch nicht im Befehlsmodus
         if (!isListeningCommand && (lower.includes("hey jarvis") || lower.includes("jarvis"))) {{
             isListeningCommand = true;
             dot.style.backgroundColor = '#38bdf8';
@@ -281,8 +322,6 @@ if (active && SpeechRecognition) {{
 
         if (isListeningCommand) {{
             clearTimeout(followUpTimer);
-
-            // Optionales erneutes Wake-Word aus Gewohnheit abstreifen
             let cleanCmd = raw.replace(/^hey jarvis/gi, "").replace(/^jarvis/gi, "").trim();
 
             if (cleanCmd.length > 0) {{
@@ -330,7 +369,7 @@ if (active && SpeechRecognition) {{
 
 components.html(hud_html, height=52)
 
-# 4. Chat-Verlauf rendern
+# Chat-Verlauf rendern
 for msg in st.session_state.messages[1:]:
     role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else None)
     content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
