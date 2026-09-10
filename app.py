@@ -73,13 +73,30 @@ def process_query(user_text):
         tool_calls = response_message.tool_calls
 
         if tool_calls:
-            # Nachricht als Dictionary festhalten
-            st.session_state.messages.append(response_message.model_dump())
-            
+            # Bereinigte Tool-Call-Liste ohne störende Zusatzattribute
+            clean_tool_calls = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    },
+                }
+                for tc in tool_calls
+            ]
+
+            # Nur die von Groq erlaubten Felder anhängen (keine annotations o.ä.)
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": response_message.content or "",
+                "tool_calls": clean_tool_calls,
+            })
+
             for tool_call in tool_calls:
                 func_name = tool_call.function.name
                 func_args = json.loads(tool_call.function.arguments)
-                
+
                 if func_name in TOOL_MAP:
                     function_output = TOOL_MAP[func_name](**func_args)
                 else:
@@ -106,23 +123,3 @@ def process_query(user_text):
 
     except Exception as e:
         st.error(f"Fehler bei Groq-Anfrage ({MODEL_NAME}): {e}")
-
-col1, col2 = st.columns([4, 1])
-with col1:
-    chat_text = st.chat_input("Befehl eingeben, Sir...")
-with col2:
-    voice_audio = st.audio_input("Sprache")
-
-if chat_text:
-    process_query(chat_text)
-
-if voice_audio:
-    try:
-        transcription = client.audio.transcriptions.create(
-            file=("voice.wav", voice_audio.read()),
-            model="whisper-large-v3"
-        ).text
-        if transcription.strip():
-            process_query(transcription)
-    except Exception as e:
-        st.error(f"Fehler bei Audio-Verarbeitung: {e}")
