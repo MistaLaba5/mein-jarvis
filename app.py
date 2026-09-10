@@ -12,7 +12,7 @@ from jarvis_tools import TOOLS_SCHEMA, TOOL_MAP, get_all_memories, list_calendar
 
 st.set_page_config(page_title="J.A.R.V.I.S. HUD", page_icon="🤖", layout="wide")
 
-# --- Futuristische Sci-Fi Stylesheet (Iron Man HUD Optik) ---
+# --- Futuristische Sci-Fi Stylesheet ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@500;600;700&display=swap');
@@ -28,9 +28,9 @@ st.markdown("""
         font-family: 'Rajdhani', sans-serif;
     }
 
-    /* Sci-Fi Kachel mit abgeschrägten Kanten */
+    /* Sci-Fi Kacheln */
     .hud-card {
-        background: rgba(4, 19, 36, 0.72);
+        background: rgba(4, 19, 36, 0.75);
         border: 1px solid rgba(0, 240, 255, 0.4);
         box-shadow: 0 0 16px rgba(0, 240, 255, 0.08) inset, 0 0 10px rgba(0, 240, 255, 0.05);
         clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
@@ -66,18 +66,18 @@ st.markdown("""
 
     .hud-digital {
         font-family: 'Orbitron', monospace;
-        font-size: 24px;
+        font-size: 26px;
         font-weight: 700;
         color: #00f0ff;
         text-shadow: 0 0 12px rgba(0, 240, 255, 0.7);
     }
 
-    /* Obere Telemetrie-Kapseln wie auf der Bildvorlage */
+    /* Obere Telemetrie-Kapseln */
     .top-telemetry-container {
         display: flex;
         justify-content: center;
         gap: 22px;
-        margin-bottom: 18px;
+        margin-bottom: 16px;
         flex-wrap: wrap;
     }
 
@@ -129,21 +129,16 @@ st.markdown("""
         box-shadow: 0 0 8px #00f0ff;
     }
 
-    /* Styling für das ausklappbare Chat-Expander-Fenster */
-    .streamlit-expanderHeader {
-        background: rgba(3, 20, 38, 0.9) !important;
-        border: 1px solid #00f0ff66 !important;
-        border-radius: 4px !important;
-        color: #38bdf8 !important;
-        font-family: 'Orbitron', monospace !important;
-        font-size: 12px !important;
-        letter-spacing: 1.5px !important;
-    }
-
-    .streamlit-expanderContent {
-        background: rgba(2, 12, 24, 0.95) !important;
-        border: 1px solid rgba(0, 240, 255, 0.3) !important;
-        border-top: none !important;
+    /* Rechte Sidebar (Design 1:1 an Streamlit Sidebar angelehnt) */
+    .right-sidebar-frame {
+        background: rgba(5, 16, 32, 0.95);
+        border-left: 1px solid rgba(0, 240, 255, 0.35);
+        box-shadow: -8px 0 25px rgba(0, 0, 0, 0.7);
+        border-radius: 6px;
+        padding: 16px 14px;
+        height: 84vh;
+        display: flex;
+        flex-direction: column;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -216,20 +211,20 @@ if "latest_audio_b64" not in st.session_state:
 if "sleep_mode" not in st.session_state:
     st.session_state.sleep_mode = False
 
-# --- Linke Seitenleiste (System Control & Gedächtnis) ---
+if "show_chat_sidebar" not in st.session_state:
+    st.session_state.show_chat_sidebar = False
+
+# --- Linke Seitenleiste: SYSTEM CONTROL ---
 with st.sidebar:
     st.markdown("<h3 style='font-family: Orbitron; color: #00f0ff;'>⚙️ SYSTEM CONTROL</h3>", unsafe_allow_html=True)
     
     if st.session_state.sleep_mode:
         st.warning("🌙 RUHEMODUS AKTIV")
-        if st.button("⚡ REAKTIVIEREN"):
+        if st.button("⚡ MANUELL AUFWECKEN"):
             st.session_state.sleep_mode = False
             st.rerun()
-        enable_wakeword = False
         enable_tts = False
     else:
-        enable_wakeword = st.toggle("🎤 'Hey Jarvis' Dauerlauschen", value=False)
-        # Sprachausgabe standardmäßig aktiv (True)
         enable_tts = st.toggle("🔊 Sprachausgabe erlauben", value=True)
 
     input_lang = st.selectbox("Mikrofon-Sprache:", ["Deutsch (de-DE)", "English (en-US)"])
@@ -242,7 +237,7 @@ with st.sidebar:
         for k, v in mems.items():
             st.markdown(f"<div style='font-size: 12px; margin-bottom: 4px;'>• <b style='color:#38bdf8;'>{k}:</b> {v}</div>", unsafe_allow_html=True)
     else:
-        st.caption("Noch keine Fakten über Sir gespeichert.")
+        st.caption("Noch keine Einträge vorhanden.")
 
     st.divider()
     st.markdown("<h4 style='font-family: Orbitron; font-size: 13px; color: #38bdf8;'>KI-KERN (GROQ)</h4>", unsafe_allow_html=True)
@@ -290,7 +285,7 @@ def generate_voice_audio(text: str) -> bytes:
 
 def process_query(user_text, is_voice=False):
     if st.session_state.sleep_mode:
-        if any(w in user_text.lower() for w in ["aufwachen", "wake up", "hallo", "guten morgen", "online"]):
+        if any(w in user_text.lower() for w in ["aufwachen", "wake up"]):
             st.session_state.sleep_mode = False
 
     st.session_state.messages[0] = {"role": "system", "content": build_system_prompt()}
@@ -375,389 +370,458 @@ def process_query(user_text, is_voice=False):
     except Exception as e:
         st.error(f"Fehler: {e}")
 
-# --- OBERE TELEMETRIE-KAPSELN (Exakt wie auf der Bildvorlage) ---
-st.markdown("""
-<div class="top-telemetry-container">
-    <div class="capsule-gauge">
-        <div class="capsule-circle">20%</div>
-        <div class="capsule-bar"><div class="capsule-fill" style="width: 20%;"></div></div>
-    </div>
-    <div class="capsule-gauge">
-        <div class="capsule-circle">30%</div>
-        <div class="capsule-bar"><div class="capsule-fill" style="width: 30%;"></div></div>
-    </div>
-    <div class="capsule-gauge">
-        <div class="capsule-circle">50%</div>
-        <div class="capsule-bar"><div class="capsule-fill" style="width: 50%;"></div></div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+# --- OBERE TELEMETRIE-KAPSELN & TOGGLE FÜR RECHTE SIDEBAR ---
+col_top_bars, col_top_toggle = st.columns([8.8, 1.2])
 
-# --- 3-SPALTIGES HUD-LAYOUT ---
-now = datetime.now(ZoneInfo("Europe/Berlin"))
-col_left, col_center, col_right = st.columns([3.2, 5.6, 3.2])
-
-# === LINKE SPALTE: ZEIT & KALENDER ===
-with col_left:
-    st.markdown(f"""
-    <div class="hud-card">
-        <div class="hud-header"><span>⏱️ CHRONO // SYSTEM</span> <span>[ACT]</span></div>
-        <div class="hud-digital">{now.strftime('%H:%M:%S')}</div>
-        <div style="color: #38bdf8; font-size: 14px; font-weight: 600; margin-top: 4px;">{now.strftime('%A, %d.%m.%Y')}</div>
-        <div style="font-size: 11px; color: #64748b; margin-top: 2px;">TIMEZONE: EUROPE/BERLIN (CET)</div>
+with col_top_bars:
+    st.markdown("""
+    <div class="top-telemetry-container">
+        <div class="capsule-gauge">
+            <div class="capsule-circle">20%</div>
+            <div class="capsule-bar"><div class="capsule-fill" style="width: 20%;"></div></div>
+        </div>
+        <div class="capsule-gauge">
+            <div class="capsule-circle">30%</div>
+            <div class="capsule-bar"><div class="capsule-fill" style="width: 30%;"></div></div>
+        </div>
+        <div class="capsule-gauge">
+            <div class="capsule-circle">50%</div>
+            <div class="capsule-bar"><div class="capsule-fill" style="width: 50%;"></div></div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-    cal_preview = list_calendar_events(days_ahead=4)
-    first_lines = "\n".join(cal_preview.split("\n")[:4]) if isinstance(cal_preview, str) else "Keine Termine"
-    st.markdown(f"""
-    <div class="hud-card">
-        <div class="hud-header"><span>📅 KALENDER // AGENDA</span> <span>[SYNC]</span></div>
-        <div style="font-size: 13px; line-height: 1.6; color: #7dd3fc; white-space: pre-line;">{first_lines}</div>
-    </div>
-    """, unsafe_allow_html=True)
+with col_top_toggle:
+    btn_label = "✖ PROTOKOLL" if st.session_state.show_chat_sidebar else "🗨️ PROTOKOLL"
+    if st.button(btn_label, use_container_width=True):
+        st.session_state.show_chat_sidebar = not st.session_state.show_chat_sidebar
+        st.rerun()
 
-# === MITTLERE SPALTE: DAS HOLOGRAMM MIT SMOOTHEN FARBEN & LAUSCHEN-BUTTON ===
-with col_center:
-    audio_payload = st.session_state.latest_audio_b64
-    st.session_state.latest_audio_b64 = ""
-    is_sleep = st.session_state.sleep_mode
+# --- HAUPT-LAYOUT (DYNAMISCH MIT / OHNE RECHTE SIDEBAR) ---
+if st.session_state.show_chat_sidebar:
+    main_col, right_sidebar_col = st.columns([7.2, 2.8])
+else:
+    main_col = st.container()
+    right_sidebar_col = None
 
-    hud_template = """
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%;">
-        
-        <!-- Arc Reactor (Klickbar für sofortiges Sprechen) -->
-        <div id="reactor-wrapper" onclick="triggerListenDirectly()" style="cursor: pointer; position: relative; width: 320px; height: 320px; display: flex; align-items: center; justify-content: center;" title="Klicken, um sofort zu sprechen">
-            <svg id="arc-reactor" viewBox="0 0 400 400" width="320" height="320">
-                
-                <!-- Äußerer Skalenring -->
-                <circle cx="200" cy="200" r="185" fill="none" stroke="rgba(0, 240, 255, 0.12)" stroke-width="1.5" />
-                <circle cx="200" cy="200" r="172" fill="none" stroke="rgba(0, 240, 255, 0.2)" stroke-dasharray="4, 10" />
+with main_col:
+    hud_left, hud_center = st.columns([4, 6])
 
-                <!-- Segmentierter Ring (Rotierend) -->
-                <g id="ring-outer" style="transform-origin: 200px 200px; animation: spinClockwise 26s linear infinite;">
-                    <circle cx="200" cy="200" r="150" fill="none" stroke="var(--hud-stroke, #00f0ff)" stroke-width="3" stroke-dasharray="100, 25, 45, 25" opacity="0.85" />
-                    <circle cx="200" cy="200" r="138" fill="none" stroke="var(--hud-stroke, #00f0ff)" stroke-width="1.5" stroke-dasharray="8, 12" opacity="0.6" />
-                </g>
+    # === LINKE HUD-KACHELN ===
+    with hud_left:
+        # Live Uhrzeit via HTML/JS (Sekundengenau & Live-Datum)
+        components.html("""
+        <div style="
+            background: rgba(4, 19, 36, 0.75);
+            border: 1px solid rgba(0, 240, 255, 0.4);
+            box-shadow: 0 0 16px rgba(0, 240, 255, 0.08) inset;
+            clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+            padding: 14px 18px;
+            font-family: 'Rajdhani', sans-serif;
+            color: #cffafe;
+        ">
+            <div style="font-family: 'Orbitron', monospace; font-size: 11px; letter-spacing: 2px; color: #38bdf8; text-transform: uppercase; margin-bottom: 8px; border-bottom: 1px solid rgba(56, 189, 248, 0.2); padding-bottom: 4px; display: flex; justify-content: space-between;">
+                <span>⏱️ CHRONO // ECHTZEIT</span> <span>[LIVE]</span>
+            </div>
+            <div id="chrono-clock" style="font-family: 'Orbitron', monospace; font-size: 26px; font-weight: 700; color: #00f0ff; text-shadow: 0 0 12px rgba(0, 240, 255, 0.7);">--:--:--</div>
+            <div id="chrono-date" style="color: #38bdf8; font-size: 14px; font-weight: 600; margin-top: 4px;">--</div>
+            <div style="font-size: 11px; color: #64748b; margin-top: 2px;">SYNCHRONISIERT: EUROPE/BERLIN</div>
+        </div>
 
-                <!-- Mittlerer Gegenring -->
-                <g id="ring-mid" style="transform-origin: 200px 200px; animation: spinCounter 16s linear infinite;">
-                    <circle cx="200" cy="200" r="118" fill="none" stroke="var(--hud-stroke-sec, #38bdf8)" stroke-width="4.5" stroke-dasharray="40, 14, 20, 14" opacity="0.9" />
-                    <circle cx="200" cy="200" r="102" fill="none" stroke="var(--hud-stroke-sec, #38bdf8)" stroke-width="1.5" stroke-dasharray="6, 8" />
-                </g>
+        <script>
+        function updateLiveClock() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const options = { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' };
+            const dateStr = now.toLocaleDateString('de-DE', options);
+            
+            const clockEl = document.getElementById('chrono-clock');
+            const dateEl = document.getElementById('chrono-date');
+            if (clockEl) clockEl.innerText = timeStr;
+            if (dateEl) dateEl.innerText = dateStr;
+        }
+        setInterval(updateLiveClock, 1000);
+        updateLiveClock();
+        </script>
+        """, height=130)
 
-                <!-- Innenring -->
-                <g id="ring-inner" style="transform-origin: 200px 200px; animation: spinClockwise 9s linear infinite;">
-                    <circle cx="200" cy="200" r="76" fill="none" stroke="var(--hud-stroke, #00f0ff)" stroke-width="2" stroke-dasharray="24, 10, 36, 10" />
-                </g>
+        # Google Kalender Vorschau
+        cal_preview = list_calendar_events(days_ahead=4)
+        first_lines = "\n".join(cal_preview.split("\n")[:4]) if isinstance(cal_preview, str) else "Keine Termine"
+        st.markdown(f"""
+        <div class="hud-card">
+            <div class="hud-header"><span>📅 KALENDER // AGENDA</span> <span>[SYNC]</span></div>
+            <div style="font-size: 13px; line-height: 1.6; color: #7dd3fc; white-space: pre-line;">{first_lines}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-                <!-- Pulsierender Kern -->
-                <circle id="core-glow" cx="200" cy="200" r="50" fill="var(--hud-fill, rgba(0, 240, 255, 0.15))" stroke="var(--hud-stroke, #00f0ff)" stroke-width="2.5" style="transform-origin: 200px 200px; animation: smoothPulse 2.8s ease-in-out infinite;" />
-                <circle id="core-center" cx="200" cy="200" r="22" fill="var(--hud-stroke, #00f0ff)" opacity="0.85" />
-            </svg>
-
-            <!-- Status-Badge in der Reaktormitte -->
-            <div style="position: absolute; text-align: center; pointer-events: none;">
-                <div id="hud-badge" style="
-                    font-family: 'Orbitron', monospace;
-                    font-size: 10px;
-                    letter-spacing: 2px;
-                    color: #fff;
-                    background: rgba(2, 10, 22, 0.85);
-                    padding: 3px 8px;
-                    border: 1px solid rgba(0, 240, 255, 0.4);
-                    border-radius: 4px;
-                ">STANDBY</div>
+        # Visuelle Telemetriebalken
+        st.markdown("""
+        <div class="hud-card">
+            <div class="hud-header"><span>⚡ TELEMETRIE // KERN</span> <span>[OK]</span></div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 4px;">
+                <span>KERN-INTEGRITÄT</span> <span style="color:#00f0ff;">99.4%</span>
+            </div>
+            <div style="background: rgba(0,240,255,0.1); height: 5px; border-radius: 2px; overflow: hidden; margin-top: 2px;">
+                <div style="background: #00f0ff; width: 99%; height: 100%;"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 8px;">
+                <span>LPU LATENZ (GROQ)</span> <span style="color:#38bdf8;">0.18s</span>
+            </div>
+            <div style="background: rgba(0,240,255,0.1); height: 5px; border-radius: 2px; overflow: hidden; margin-top: 2px;">
+                <div style="background: #38bdf8; width: 88%; height: 100%;"></div>
             </div>
         </div>
+        """, unsafe_allow_html=True)
 
-        <!-- Prominenter Lauschen-Button -->
-        <button id="btn-listen" onclick="triggerListenDirectly()" style="
-            margin-top: 14px;
-            background: rgba(4, 25, 48, 0.85);
-            border: 1px solid #00f0ff;
-            box-shadow: 0 0 14px rgba(0, 240, 255, 0.35);
-            color: #00f0ff;
-            font-family: 'Orbitron', monospace;
-            font-size: 11px;
-            font-weight: 700;
-            letter-spacing: 1.5px;
-            padding: 8px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        ">🎙️ LAUSCHEN AKTIVIEREN</button>
+    # === MITTLERES HUD: ARC REACTOR, MIKROFON-SCHALTER & SLEEP-LOGIK ===
+    with hud_center:
+        audio_payload = st.session_state.latest_audio_b64
+        st.session_state.latest_audio_b64 = ""
+        is_sleep = st.session_state.sleep_mode
 
-        <!-- Spracherkennungs-Feedback -->
-        <div id="hud-transcript" style="
-            font-family: 'Orbitron', monospace;
-            font-size: 12px;
-            color: #38bdf8;
-            min-height: 22px;
-            margin-top: 8px;
-            text-align: center;
-        "></div>
+        hud_template = """
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%;">
+            
+            <!-- Mikrofon-Umschalter im HUD (Mute / Unmute) -->
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                <button id="btn-hud-mic" onclick="toggleHudMic()" style="
+                    background: rgba(3, 20, 38, 0.85);
+                    border: 1px solid #00f0ff;
+                    border-radius: 50%;
+                    width: 44px;
+                    height: 44px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    box-shadow: 0 0 12px rgba(0, 240, 255, 0.3);
+                    transition: all 0.4s ease;
+                " title="Mikrofon-Lauschen umschalten">
+                    <svg id="svg-mic-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <!-- Standard Mic Shape -->
+                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                        <line x1="12" y1="19" x2="12" y2="22"></line>
+                        <!-- Slash-Line (initial verborgen) -->
+                        <line id="mic-slash-line" x1="2" y1="2" x2="22" y2="22" stroke="#ef4444" stroke-width="2.5" style="display: none;"></line>
+                    </svg>
+                </button>
+                <span id="hud-mic-label" style="font-family: 'Orbitron', monospace; font-size: 11px; color: #38bdf8; letter-spacing: 1.5px;">LAUSCHEN: AKTIV</span>
+            </div>
 
-        <!-- Die 8 kleinen kybernetischen Kreise am Boden wie in der Vorlage -->
-        <div style="display: flex; gap: 10px; margin-top: 10px; opacity: 0.7;">
-            <svg width="22" height="22" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="2" stroke-dasharray="15, 10"/></svg>
-            <svg width="22" height="22" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="1.5" stroke-dasharray="8, 6"/></svg>
-            <svg width="22" height="22" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="2" stroke-dasharray="25, 12"/></svg>
-            <svg width="22" height="22" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="1.5" stroke-dasharray="4, 4"/></svg>
-            <svg width="22" height="22" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="2" stroke-dasharray="18, 8"/></svg>
-            <svg width="22" height="22" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="1.5" stroke-dasharray="10, 10"/></svg>
-            <svg width="22" height="22" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="2" stroke-dasharray="30, 8"/></svg>
-            <svg width="22" height="22" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="1.5" stroke-dasharray="6, 6"/></svg>
+            <!-- Arc Reactor Hologramm (Klickbar für Direktsprache) -->
+            <div id="reactor-wrapper" onclick="triggerListenDirectly()" style="cursor: pointer; position: relative; width: 300px; height: 300px; display: flex; align-items: center; justify-content: center;" title="Klicken für Sofortbefehl">
+                <svg id="arc-reactor" viewBox="0 0 400 400" width="300" height="300">
+                    <circle cx="200" cy="200" r="185" fill="none" stroke="rgba(0, 240, 255, 0.12)" stroke-width="1.5" />
+                    <circle cx="200" cy="200" r="172" fill="none" stroke="rgba(0, 240, 255, 0.2)" stroke-dasharray="4, 10" />
+
+                    <g id="ring-outer" style="transform-origin: 200px 200px; animation: spinClockwise 26s linear infinite;">
+                        <circle cx="200" cy="200" r="150" fill="none" stroke="var(--hud-stroke, #00f0ff)" stroke-width="3" stroke-dasharray="100, 25, 45, 25" opacity="0.85" />
+                        <circle cx="200" cy="200" r="138" fill="none" stroke="var(--hud-stroke, #00f0ff)" stroke-width="1.5" stroke-dasharray="8, 12" opacity="0.6" />
+                    </g>
+
+                    <g id="ring-mid" style="transform-origin: 200px 200px; animation: spinCounter 16s linear infinite;">
+                        <circle cx="200" cy="200" r="118" fill="none" stroke="var(--hud-stroke-sec, #38bdf8)" stroke-width="4.5" stroke-dasharray="40, 14, 20, 14" opacity="0.9" />
+                        <circle cx="200" cy="200" r="102" fill="none" stroke="var(--hud-stroke-sec, #38bdf8)" stroke-width="1.5" stroke-dasharray="6, 8" />
+                    </g>
+
+                    <g id="ring-inner" style="transform-origin: 200px 200px; animation: spinClockwise 9s linear infinite;">
+                        <circle cx="200" cy="200" r="76" fill="none" stroke="var(--hud-stroke, #00f0ff)" stroke-width="2" stroke-dasharray="24, 10, 36, 10" />
+                    </g>
+
+                    <circle id="core-glow" cx="200" cy="200" r="50" fill="var(--hud-fill, rgba(0, 240, 255, 0.15))" stroke="var(--hud-stroke, #00f0ff)" stroke-width="2.5" style="transform-origin: 200px 200px; animation: smoothPulse 2.8s ease-in-out infinite;" />
+                    <circle id="core-center" cx="200" cy="200" r="22" fill="var(--hud-stroke, #00f0ff)" opacity="0.85" />
+                </svg>
+
+                <div style="position: absolute; text-align: center; pointer-events: none;">
+                    <div id="hud-badge" style="
+                        font-family: 'Orbitron', monospace;
+                        font-size: 10px;
+                        letter-spacing: 2px;
+                        color: #fff;
+                        background: rgba(2, 10, 22, 0.85);
+                        padding: 3px 8px;
+                        border: 1px solid rgba(0, 240, 255, 0.4);
+                        border-radius: 4px;
+                    ">STANDBY</div>
+                </div>
+            </div>
+
+            <!-- Spracherkennung Textanzeige -->
+            <div id="hud-transcript" style="
+                font-family: 'Orbitron', monospace;
+                font-size: 12px;
+                color: #38bdf8;
+                min-height: 22px;
+                margin-top: 8px;
+                text-align: center;
+            "></div>
+
+            <!-- Kybernetische Dekorkreise am Boden -->
+            <div style="display: flex; gap: 8px; margin-top: 8px; opacity: 0.65;">
+                <svg width="20" height="20" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="2" stroke-dasharray="15, 10"/></svg>
+                <svg width="20" height="20" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="1.5" stroke-dasharray="8, 6"/></svg>
+                <svg width="20" height="20" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="2" stroke-dasharray="25, 12"/></svg>
+                <svg width="20" height="20" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="1.5" stroke-dasharray="4, 4"/></svg>
+                <svg width="20" height="20" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="2" stroke-dasharray="18, 8"/></svg>
+                <svg width="20" height="20" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#00f0ff" stroke-width="1.5" stroke-dasharray="10, 10"/></svg>
+            </div>
+
         </div>
 
-    </div>
+        <style>
+            :root {
+                --hud-stroke: #00f0ff;
+                --hud-stroke-sec: #38bdf8;
+                --hud-fill: rgba(0, 240, 255, 0.15);
+            }
 
-    <style>
-        :root {
-            --hud-stroke: #00f0ff;
-            --hud-stroke-sec: #38bdf8;
-            --hud-fill: rgba(0, 240, 255, 0.15);
+            #arc-reactor circle, #arc-reactor g {
+                transition: stroke 1.2s cubic-bezier(0.25, 1, 0.5, 1),
+                            fill 1.2s cubic-bezier(0.25, 1, 0.5, 1),
+                            filter 1.2s cubic-bezier(0.25, 1, 0.5, 1);
+            }
+
+            #hud-badge { transition: all 0.8s ease; }
+
+            @keyframes spinClockwise { 100% { transform: rotate(360deg); } }
+            @keyframes spinCounter { 100% { transform: rotate(-360deg); } }
+
+            @keyframes smoothPulse {
+                0%, 100% { transform: scale(1); filter: drop-shadow(0 0 6px var(--hud-stroke)); opacity: 0.8; }
+                50% { transform: scale(1.08); filter: drop-shadow(0 0 20px var(--hud-stroke)); opacity: 1; }
+            }
+
+            @keyframes speakingPulse {
+                0%, 100% { transform: scale(1); filter: drop-shadow(0 0 10px #c084fc); }
+                50% { transform: scale(1.15); filter: drop-shadow(0 0 28px #e879f9); }
+            }
+        </style>
+
+        <script>
+        let isSleep = __IS_SLEEP__;
+        let isMuted = false;
+        const audioB64 = "__AUDIO_B64__";
+        const targetLang = "__TARGET_LANG__";
+
+        const root = document.documentElement;
+        const badge = document.getElementById('hud-badge');
+        const transcript = document.getElementById('hud-transcript');
+        const core = document.getElementById('core-glow');
+        const slashLine = document.getElementById('mic-slash-line');
+        const micLabel = document.getElementById('hud-mic-label');
+        const btnMic = document.getElementById('btn-hud-mic');
+
+        function applyState(mode) {
+            if (mode === 'sleep') {
+                root.style.setProperty('--hud-stroke', '#ef4444');
+                root.style.setProperty('--hud-stroke-sec', '#991b1b');
+                root.style.setProperty('--hud-fill', 'rgba(239, 68, 68, 0.12)');
+                badge.innerText = 'RUHEMODUS';
+                badge.style.borderColor = '#ef4444';
+                transcript.innerText = '🌙 Warte auf "Hey Jarvis, aufwachen"...';
+            } else if (mode === 'speaking') {
+                root.style.setProperty('--hud-stroke', '#c084fc');
+                root.style.setProperty('--hud-stroke-sec', '#a855f7');
+                root.style.setProperty('--hud-fill', 'rgba(192, 132, 252, 0.2)');
+                badge.innerText = 'JARVIS';
+                badge.style.borderColor = '#c084fc';
+                transcript.innerText = 'Antwort wird ausgegeben...';
+                core.style.animation = 'speakingPulse 0.7s ease-in-out infinite';
+            } else if (mode === 'listening') {
+                root.style.setProperty('--hud-stroke', '#facc15');
+                root.style.setProperty('--hud-stroke-sec', '#f59e0b');
+                root.style.setProperty('--hud-fill', 'rgba(250, 204, 21, 0.2)');
+                badge.innerText = 'HÖRE ZU';
+                badge.style.borderColor = '#facc15';
+                transcript.innerText = 'Sir spricht...';
+                core.style.animation = 'smoothPulse 0.9s ease-in-out infinite';
+            } else {
+                root.style.setProperty('--hud-stroke', '#00f0ff');
+                root.style.setProperty('--hud-stroke-sec', '#38bdf8');
+                root.style.setProperty('--hud-fill', 'rgba(0, 240, 255, 0.15)');
+                badge.innerText = isMuted ? 'STUMM' : 'BEREIT';
+                badge.style.borderColor = 'rgba(0, 240, 255, 0.4)';
+                transcript.innerText = isMuted ? 'Mikrofon stumm' : 'Warte auf "Hey Jarvis"...';
+                core.style.animation = 'smoothPulse 2.8s ease-in-out infinite';
+            }
         }
 
-        /* Butterweiche Farb- und Scheinübergänge */
-        #arc-reactor circle, #arc-reactor g {
-            transition: stroke 1.2s cubic-bezier(0.25, 1, 0.5, 1),
-                        fill 1.2s cubic-bezier(0.25, 1, 0.5, 1),
-                        filter 1.2s cubic-bezier(0.25, 1, 0.5, 1),
-                        opacity 0.8s ease;
+        function updateMicUI() {
+            if (isMuted) {
+                slashLine.style.display = 'block';
+                btnMic.style.borderColor = '#ef4444';
+                btnMic.style.boxShadow = '0 0 10px rgba(239, 68, 68, 0.4)';
+                micLabel.innerText = 'LAUSCHEN: AUS';
+                micLabel.style.color = '#ef4444';
+                applyState('standby');
+            } else {
+                slashLine.style.display = 'none';
+                btnMic.style.borderColor = '#00f0ff';
+                btnMic.style.boxShadow = '0 0 12px rgba(0, 240, 255, 0.3)';
+                micLabel.innerText = 'LAUSCHEN: AKTIV';
+                micLabel.style.color = '#38bdf8';
+                applyState(isSleep ? 'sleep' : 'standby');
+            }
         }
 
-        #hud-badge, #btn-listen {
-            transition: all 0.8s cubic-bezier(0.25, 1, 0.5, 1);
-        }
-
-        @keyframes spinClockwise { 100% { transform: rotate(360deg); } }
-        @keyframes spinCounter { 100% { transform: rotate(-360deg); } }
-
-        @keyframes smoothPulse {
-            0%, 100% { transform: scale(1); filter: drop-shadow(0 0 6px var(--hud-stroke)); opacity: 0.8; }
-            50% { transform: scale(1.08); filter: drop-shadow(0 0 20px var(--hud-stroke)); opacity: 1; }
-        }
-
-        @keyframes speakingPulse {
-            0%, 100% { transform: scale(1); filter: drop-shadow(0 0 10px #c084fc); }
-            50% { transform: scale(1.15); filter: drop-shadow(0 0 28px #e879f9); }
-        }
-    </style>
-
-    <script>
-    const isSleep = __IS_SLEEP__;
-    const active = __ACTIVE__;
-    const audioB64 = "__AUDIO_B64__";
-    const targetLang = "__TARGET_LANG__";
-
-    const root = document.documentElement;
-    const badge = document.getElementById('hud-badge');
-    const transcript = document.getElementById('hud-transcript');
-    const core = document.getElementById('core-glow');
-    const btnListen = document.getElementById('btn-listen');
-
-    function applyState(mode) {
-        if (mode === 'sleep') {
-            root.style.setProperty('--hud-stroke', '#ef4444');
-            root.style.setProperty('--hud-stroke-sec', '#991b1b');
-            root.style.setProperty('--hud-fill', 'rgba(239, 68, 68, 0.12)');
-            badge.innerText = 'OFFLINE';
-            badge.style.borderColor = '#ef4444';
-            transcript.innerText = '🌙 Ruhemodus aktiv';
-            btnListen.style.borderColor = '#ef4444';
-            btnListen.style.color = '#ef4444';
-        } else if (mode === 'speaking') {
-            root.style.setProperty('--hud-stroke', '#c084fc');
-            root.style.setProperty('--hud-stroke-sec', '#a855f7');
-            root.style.setProperty('--hud-fill', 'rgba(192, 132, 252, 0.2)');
-            badge.innerText = 'JARVIS';
-            badge.style.borderColor = '#c084fc';
-            transcript.innerText = 'Antwort wird übertragen...';
-            core.style.animation = 'speakingPulse 0.7s ease-in-out infinite';
-        } else if (mode === 'listening') {
-            root.style.setProperty('--hud-stroke', '#facc15');
-            root.style.setProperty('--hud-stroke-sec', '#f59e0b');
-            root.style.setProperty('--hud-fill', 'rgba(250, 204, 21, 0.2)');
-            badge.innerText = 'HÖRE ZU';
-            badge.style.borderColor = '#facc15';
-            transcript.innerText = 'Sir spricht...';
-            core.style.animation = 'smoothPulse 0.9s ease-in-out infinite';
-        } else {
-            root.style.setProperty('--hud-stroke', '#00f0ff');
-            root.style.setProperty('--hud-stroke-sec', '#38bdf8');
-            root.style.setProperty('--hud-fill', 'rgba(0, 240, 255, 0.15)');
-            badge.innerText = active ? 'ONLINE' : 'STANDBY';
-            badge.style.borderColor = 'rgba(0, 240, 255, 0.4)';
-            transcript.innerText = active ? 'Warte auf "Hey Jarvis"...' : '';
-            core.style.animation = 'smoothPulse 2.8s ease-in-out infinite';
-            btnListen.style.borderColor = '#00f0ff';
-            btnListen.style.color = '#00f0ff';
-        }
-    }
-
-    if (isSleep) applyState('sleep');
-    else applyState('standby');
-
-    let isSpeaking = false;
-    if (audioB64.length > 0) {
-        isSpeaking = true;
-        applyState('speaking');
-        const audio = new Audio("data:audio/mp3;base64," + audioB64);
-        audio.play().catch(() => {
-            isSpeaking = false;
-            applyState(isSleep ? 'sleep' : 'standby');
-        });
-        audio.onended = () => {
-            isSpeaking = false;
-            applyState(isSleep ? 'sleep' : 'standby');
-            if (active && !isSleep) {
+        window.toggleHudMic = function() {
+            isMuted = !isMuted;
+            updateMicUI();
+            if (!isMuted && rec) {
                 try { rec.start(); } catch(e) {}
             }
         };
-    }
 
-    let rec = null;
-    let isListeningCommand = false;
-    let silenceTimeout = null;
-    let fullCommand = "";
+        if (isSleep) applyState('sleep');
+        else applyState('standby');
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-        rec = new SpeechRecognition();
-        rec.continuous = true;
-        rec.interimResults = true;
-        rec.lang = targetLang;
-
-        if (active && !isSpeaking && !isSleep) {
-            try { rec.start(); } catch(e) {}
-        }
-
-        rec.onresult = (event) => {
-            if (isSpeaking || isSleep) return;
-
-            let interim = "";
-            let final = "";
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-                if (event.results[i].isFinal) final += event.results[i][0].transcript;
-                else interim += event.results[i][0].transcript;
-            }
-
-            let raw = (final || interim).trim();
-            let lower = raw.toLowerCase();
-
-            if (!isListeningCommand && (lower.includes("hey jarvis") || lower.includes("jarvis"))) {
-                isListeningCommand = true;
-                applyState('listening');
-                raw = raw.replace(/hey jarvis/gi, "").replace(/jarvis/gi, "").trim();
-            }
-
-            if (isListeningCommand) {
-                let cleanCmd = raw.replace(/^hey jarvis/gi, "").replace(/^jarvis/gi, "").trim();
-                if (cleanCmd.length > 0) {
-                    fullCommand = cleanCmd;
-                    transcript.innerText = '"' + fullCommand + '"';
-
-                    clearTimeout(silenceTimeout);
-                    silenceTimeout = setTimeout(() => {
-                        if (fullCommand.trim().length > 0) {
-                            const parentDoc = window.parent.document;
-                            
-                            // Falls das Chat-Fenster zugeklappt ist, für Feedback öffnen
-                            const expander = parentDoc.querySelector('details[data-testid="stExpander"]');
-                            if (expander && !expander.open) expander.open = true;
-
-                            setTimeout(() => {
-                                const ta = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
-                                if (ta) {
-                                    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-                                    setter.call(ta, "[VOICE] " + fullCommand);
-                                    ta.dispatchEvent(new Event('input', { bubbles: true }));
-
-                                    setTimeout(() => {
-                                        const btn = parentDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
-                                        if (btn) btn.click();
-                                        else {
-                                            ta.dispatchEvent(new KeyboardEvent('keydown', {
-                                                bubbles: true, cancelable: true, keyCode: 13, key: 'Enter'
-                                            }));
-                                        }
-                                    }, 100);
-                                }
-                            }, 80);
-
-                            fullCommand = "";
-                            isListeningCommand = false;
-                            applyState('standby');
-                        }
-                    }, 1100);
+        let isSpeaking = false;
+        if (audioB64.length > 0) {
+            isSpeaking = true;
+            applyState('speaking');
+            const audio = new Audio("data:audio/mp3;base64," + audioB64);
+            audio.play().catch(() => {
+                isSpeaking = false;
+                applyState(isSleep ? 'sleep' : 'standby');
+            });
+            audio.onended = () => {
+                isSpeaking = false;
+                applyState(isSleep ? 'sleep' : 'standby');
+                if (!isMuted && rec) {
+                    try { rec.start(); } catch(e) {}
                 }
-            }
-        };
+            };
+        }
 
-        rec.onend = () => {
-            if ((active || isListeningCommand) && !isSpeaking && !isSleep) {
+        let rec = null;
+        let isListeningCommand = false;
+        let silenceTimeout = null;
+        let fullCommand = "";
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            rec = new SpeechRecognition();
+            rec.continuous = true;
+            rec.interimResults = true;
+            rec.lang = targetLang;
+
+            if (!isSpeaking) {
+                try { rec.start(); } catch(e) {}
+            }
+
+            rec.onresult = (event) => {
+                if (isSpeaking || isMuted) return;
+
+                let interim = "";
+                let final = "";
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) final += event.results[i][0].transcript;
+                    else interim += event.results[i][0].transcript;
+                }
+
+                let raw = (final || interim).trim();
+                let lower = raw.toLowerCase();
+
+                // RUHEMODUS: Reagiere AUSSCHLIESSLICH auf "aufwachen" / "wake up"
+                if (isSleep) {
+                    if (lower.includes("aufwachen") || lower.includes("wake up")) {
+                        isSleep = false;
+                        applyState('standby');
+                        sendTextCommand("Hey Jarvis aufwachen");
+                    }
+                    return; // Alles andere im Schlafmodus ignorieren
+                }
+
+                // NORMALMODUS: Wake-Word erkennen
+                if (!isListeningCommand && (lower.includes("hey jarvis") || lower.includes("jarvis"))) {
+                    isListeningCommand = true;
+                    applyState('listening');
+                    raw = raw.replace(/hey jarvis/gi, "").replace(/jarvis/gi, "").trim();
+                }
+
+                if (isListeningCommand) {
+                    let cleanCmd = raw.replace(/^hey jarvis/gi, "").replace(/^jarvis/gi, "").trim();
+                    if (cleanCmd.length > 0) {
+                        fullCommand = cleanCmd;
+                        transcript.innerText = '"' + fullCommand + '"';
+
+                        clearTimeout(silenceTimeout);
+                        silenceTimeout = setTimeout(() => {
+                            if (fullCommand.trim().length > 0) {
+                                sendTextCommand(fullCommand);
+                                fullCommand = "";
+                                isListeningCommand = false;
+                                applyState('standby');
+                            }
+                        }, 1100);
+                    }
+                }
+            };
+
+            rec.onend = () => {
+                if (!isSpeaking && !isMuted) {
+                    try { rec.start(); } catch(e) {}
+                }
+            };
+        }
+
+        function sendTextCommand(cmd) {
+            const parentDoc = window.parent.document;
+            const ta = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+            if (ta) {
+                const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+                setter.call(ta, "[VOICE] " + cmd);
+                ta.dispatchEvent(new Event('input', { bubbles: true }));
+
+                setTimeout(() => {
+                    const btn = parentDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
+                    if (btn) btn.click();
+                    else {
+                        ta.dispatchEvent(new KeyboardEvent('keydown', {
+                            bubbles: true, cancelable: true, keyCode: 13, key: 'Enter'
+                        }));
+                    }
+                }, 100);
+            }
+        }
+
+        window.triggerListenDirectly = function() {
+            if (isSpeaking) return;
+            if (isSleep) {
+                isSleep = false;
+                applyState('standby');
+                sendTextCommand("Hey Jarvis aufwachen");
+                return;
+            }
+            isListeningCommand = true;
+            applyState('listening');
+            transcript.innerText = "Lausche... Sprechen Sie, Sir.";
+            if (rec) {
                 try { rec.start(); } catch(e) {}
             }
         };
-    }
+        </script>
+        """
 
-    // Funktion für Klick auf den Lauschen-Button oder Arc Reactor
-    window.triggerListenDirectly = function() {
-        if (isSleep || isSpeaking) return;
-        isListeningCommand = true;
-        applyState('listening');
-        transcript.innerText = "Lausche... Sprechen Sie, Sir.";
-        if (rec) {
-            try { rec.start(); } catch(e) {}
-        }
-    };
-    </script>
-    """
+        hud_html = (
+            hud_template.replace("__IS_SLEEP__", str(is_sleep).lower())
+            .replace("__AUDIO_B64__", audio_payload)
+            .replace("__TARGET_LANG__", rec_lang_code)
+        )
 
-    hud_html = (
-        hud_template.replace("__IS_SLEEP__", str(is_sleep).lower())
-        .replace("__ACTIVE__", str(enable_wakeword and not is_sleep).lower())
-        .replace("__AUDIO_B64__", audio_payload)
-        .replace("__TARGET_LANG__", rec_lang_code)
-    )
+        components.html(hud_html, height=450)
 
-    components.html(hud_html, height=450)
+# === RECHTE SIDEBAR (1:1 WIE SYSTEM CONTROL DARGESTELLT) ===
+if right_sidebar_col:
+    with right_sidebar_col:
+        st.markdown("<h3 style='font-family: Orbitron; color: #00f0ff;'>💬 CHAT PROTOCOL</h3>", unsafe_allow_html=True)
+        st.caption("Echtzeit-Kommunikation mit J.A.R.V.I.S.")
+        st.divider()
 
-# === RECHTE SPALTE: TELEMETRIE-DIAGNOSE & AUSKLAPPBARER CHAT ===
-with col_right:
-    # Saubere visuelle Status-Skalen statt Text
-    st.markdown("""
-    <div class="hud-card">
-        <div class="hud-header"><span>⚡ TELEMETRIE // KERN</span> <span>[OK]</span></div>
-        
-        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 6px;">
-            <span>KERN-INTEGRITÄT</span> <span style="color:#00f0ff;">99.4%</span>
-        </div>
-        <div style="background: rgba(0,240,255,0.1); height: 6px; border-radius: 2px; overflow: hidden; margin-top: 3px;">
-            <div style="background: #00f0ff; width: 99%; height: 100%; box-shadow: 0 0 6px #00f0ff;"></div>
-        </div>
-
-        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 10px;">
-            <span>LPU VERARBEITUNG</span> <span style="color:#38bdf8;">0.18s</span>
-        </div>
-        <div style="background: rgba(0,240,255,0.1); height: 6px; border-radius: 2px; overflow: hidden; margin-top: 3px;">
-            <div style="background: #38bdf8; width: 88%; height: 100%; box-shadow: 0 0 6px #38bdf8;"></div>
-        </div>
-
-        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 10px;">
-            <span>AUDIO STREAM</span> <span style="color:#10b981;">SYNCHRON</span>
-        </div>
-        <div style="background: rgba(0,240,255,0.1); height: 6px; border-radius: 2px; overflow: hidden; margin-top: 3px;">
-            <div style="background: #10b981; width: 100%; height: 100%; box-shadow: 0 0 6px #10b981;"></div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Ausklappbares Fenster: Standardmäßig zugeklappt (expanded=False)
-    with st.expander("🗨️ CHAT-TERMINAL & PROTOKOLL", expanded=False):
-        chat_box = st.container(height=280)
-        with chat_box:
+        chat_history_container = st.container(height=420)
+        with chat_history_container:
             for msg in st.session_state.messages[1:]:
                 role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else None)
                 content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
@@ -765,11 +829,12 @@ with col_right:
                     with st.chat_message(role):
                         st.write(content)
 
-        chat_text = st.chat_input("Befehl an J.A.R.V.I.S., Sir...")
-        if chat_text:
-            if chat_text.startswith("[VOICE]"):
-                clean = chat_text.replace("[VOICE]", "").strip()
-                process_query(clean, is_voice=True)
-            else:
-                process_query(chat_text, is_voice=False)
-            st.rerun()
+# Globale Chat-Eingabe (unten fest verankert)
+chat_text = st.chat_input("Befehl an J.A.R.V.I.S., Sir...")
+if chat_text:
+    if chat_text.startswith("[VOICE]"):
+        clean = chat_text.replace("[VOICE]", "").strip()
+        process_query(clean, is_voice=True)
+    else:
+        process_query(chat_text, is_voice=False)
+    st.rerun()
