@@ -125,10 +125,13 @@ def get_current_time():
     return f"Es ist {now.strftime('%H:%M')} Uhr am {now.strftime('%d.%m.%Y')}."
 
 def run_protocol(protocol_name: str):
-    if protocol_name.lower() == "fokus":
+    p = protocol_name.lower()
+    if "fokus" in p:
         return "Protokoll Fokus aktiv: Arbeitsumgebung scharfgestellt, Störquellen minimiert."
-    elif protocol_name.lower() == "party":
+    elif "party" in p:
         return "Protokoll House Party ausgeführt: Soundsysteme und Beleuchtung synchronisiert."
+    elif any(x in p for x in ["ruhe", "schlaf", "sleep", "standby"]):
+        return "TRIGGER_SLEEP_MODE: Ruhemodus initiiert. Bestätige Sir den Ruhemodus kurz und loyal in einem Satz. Alle Mikrofone und Sensoren werden danach heruntergefahren."
     return f"Protokoll '{protocol_name}' ist nicht hinterlegt, Sir."
 
 def sync_spielerplus():
