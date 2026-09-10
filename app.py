@@ -109,7 +109,7 @@ with st.sidebar:
 
     st.divider()
     if available_models:
-        target_model = "llama-3.3-70b-versatile"
+        target_model = "openai/gpt-oss-120b"
         default_idx = available_models.index(target_model) if target_model in available_models else 0
         MODEL_NAME = st.selectbox("Aktives Modell:", available_models, index=default_idx)
     else:
@@ -144,7 +144,7 @@ async def generate_edge_voice(text: str, voice_name: str, rate: str = "-3%", pit
     return audio_data
 
 def generate_voice_audio(text: str) -> bytes:
-    """Nutzt MeloTTS für flüssiges Deutsch und Kokoro-82M für Englisch mit Edge-TTS als Fallback."""
+    """Nutzt MeloTTS für Deutsch und Kokoro-82M für Englisch."""
     lang = detect_language(text)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -187,13 +187,19 @@ def process_query(user_text, is_voice=False):
     st.session_state.messages.append({"role": "user", "content": user_text})
 
     try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=st.session_state.messages,
-            tools=TOOLS_SCHEMA,
-            tool_choice="auto",
-            temperature=0.5,
-        )
+        # Request-Parameter zusammenstellen
+        req_params = {
+            "model": MODEL_NAME,
+            "messages": st.session_state.messages,
+            "tools": TOOLS_SCHEMA,
+            "tool_choice": "auto",
+            "temperature": 0.5,
+        }
+        # Denkprozesse bei Reasoning-Modellen wie GPT-OSS stummschalten
+        if "gpt-oss" in MODEL_NAME or "qwen" in MODEL_NAME:
+            req_params["extra_body"] = {"reasoning_format": "hidden"}
+
+        response = client.chat.completions.create(**req_params)
 
         response_message = response.choices[0].message
         tool_calls = response_message.tool_calls
@@ -237,17 +243,23 @@ def process_query(user_text, is_voice=False):
                     "content": str(function_output),
                 })
 
-            second_response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=st.session_state.messages,
-            )
+            second_params = {
+                "model": MODEL_NAME,
+                "messages": st.session_state.messages,
+            }
+            if "gpt-oss" in MODEL_NAME or "qwen" in MODEL_NAME:
+                second_params["extra_body"] = {"reasoning_format": "hidden"}
+
+            second_response = client.chat.completions.create(**second_params)
             reply = second_response.choices[0].message.content
         else:
             reply = response_message.content
 
-        # Denkprozesse herausfiltern
+        # Zusätzliche Absicherung: Denk-Tags herausfiltern, falls noch Reste durchkommen
         if "</think>" in reply:
             reply = reply.split("</think>")[-1].strip()
+        if "Thus final." in reply:
+            reply = reply.split("Thus final.")[-1].strip()
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
         save_chat_history(st.session_state.messages)
