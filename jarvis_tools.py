@@ -1,8 +1,12 @@
 import datetime
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 def get_current_time():
-    """Gibt die aktuelle Uhrzeit zurück."""
-    now = datetime.datetime.now()
+    """Gibt die exakte deutsche Ortszeit zurück."""
+    # Erzwingt die mitteleuropäische Zeitzone (Berlin/Deutschland)
+    now = datetime.now(ZoneInfo("Europe/Berlin"))
     return f"Es ist {now.strftime('%H:%M')} Uhr am {now.strftime('%d.%m.%Y')}."
 
 def run_protocol(protocol_name: str):
