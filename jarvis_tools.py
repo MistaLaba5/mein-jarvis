@@ -3,15 +3,95 @@ import os
 import sys
 import io
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+import streamlit as st
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
 
 MEMORY_FILE = "jarvis_memory.json"
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
-# --- Gedächtnis-Funktionen ---
+# --- Google Calendar Verbindung ---
+
+def get_calendar_service():
+    """Initialisiert den Google Calendar Client über das Dienstkonto."""
+    raw_creds = st.secrets.get("GOOGLE_SERVICE_ACCOUNT")
+    if not raw_creds:
+        return None
+    try:
+        creds_dict = json.loads(raw_creds) if isinstance(raw_creds, str) else dict(raw_creds)
+        creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        return build("calendar", "v3", credentials=creds)
+    except Exception:
+        return None
+
+def list_calendar_events(days_ahead: int = 7):
+    """Liest anstehende Termine aus Sirs Google Kalender aus."""
+    service = get_calendar_service()
+    cal_id = st.secrets.get("GOOGLE_CALENDAR_ID")
+    if not service or not cal_id:
+        return "Kalender-Schnittstelle nicht konfiguriert. Prüfe Secrets in Streamlit."
+
+    now = datetime.now(ZoneInfo("Europe/Berlin"))
+    time_min = now.isoformat()
+    time_max = (now + timedelta(days=days_ahead)).isoformat()
+
+    try:
+        events_result = service.events().list(
+            calendarId=cal_id,
+            timeMin=time_min,
+            timeMax=time_max,
+            singleEvents=True,
+            orderBy="startTime",
+        ).execute()
+
+        events = events_result.get("items", [])
+        if not events:
+            return f"Keine anstehenden Termine in den nächsten {days_ahead} Tagen gefunden."
+
+        result_lines = [f"Termine der nächsten {days_ahead} Tage:"]
+        for ev in events:
+            summary = ev.get("summary", "Ohne Titel")
+            start = ev["start"].get("dateTime", ev["start"].get("date"))
+            dt = datetime.fromisoformat(start)
+            result_lines.append(f"- {dt.strftime('%d.%m.%Y um %H:%M Uhr')}: {summary}")
+
+        return "\n".join(result_lines)
+    except Exception as e:
+        return f"Fehler beim Abrufen des Kalenders: {e}"
+
+def create_calendar_event(summary: str, start_time: str, end_time: str = None, description: str = ""):
+    """
+    Erstellt einen neuen Kalendereintrag.
+    Format für start_time und end_time: YYYY-MM-DDTHH:MM:SS (z. B. '2026-09-12T18:00:00').
+    """
+    service = get_calendar_service()
+    cal_id = st.secrets.get("GOOGLE_CALENDAR_ID")
+    if not service or not cal_id:
+        return "Kalender-Schnittstelle nicht konfiguriert. Prüfe Secrets in Streamlit."
+
+    try:
+        # Falls keine Endzeit angegeben ist, Standarddauer 1 Stunde ansetzen
+        if not end_time:
+            start_dt = datetime.fromisoformat(start_time)
+            end_time = (start_dt + timedelta(hours=1)).isoformat()
+
+        event_body = {
+            "summary": summary,
+            "description": description,
+            "start": {"dateTime": start_time, "timeZone": "Europe/Berlin"},
+            "end": {"dateTime": end_time, "timeZone": "Europe/Berlin"},
+        }
+
+        created = service.events().insert(calendarId=cal_id, body=event_body).execute()
+        return f"Termin '{summary}' am {start_time} erfolgreich in Ihren Google Kalender eingetragen."
+    except Exception as e:
+        return f"Fehler beim Erstellen des Termins: {e}"
+
+# --- Gedächtnis & Code-Tools ---
 
 def get_all_memories() -> dict:
-    """Liest alle gespeicherten Notizen aus."""
     if not os.path.exists(MEMORY_FILE):
         return {}
     try:
@@ -21,46 +101,30 @@ def get_all_memories() -> dict:
         return {}
 
 def save_memory(topic: str, detail: str):
-    """Speichert eine Information über Sir dauerhaft ab."""
     memories = get_all_memories()
     memories[topic] = detail
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         json.dump(memories, f, ensure_ascii=False, indent=2)
     return f"Gedächtnis aktualisiert: [{topic}] -> '{detail}' wurde dauerhaft hinterlegt."
 
-# --- Code-Ausführung & Autonomie ---
-
 def execute_python(code: str):
-    """
-    Führt dynamischen Python-Code aus, fängt Bildschirmausgaben (print) 
-    ab und meldet Fehler zurück an Jarvis, damit er sie korrigieren kann.
-    """
     old_stdout = sys.stdout
-    redirected_output = io.StringIO()
-    sys.stdout = redirected_output
-
-    local_scope = {}
+    redirected = io.StringIO()
+    sys.stdout = redirected
     try:
-        exec(code, {}, local_scope)
-        output = redirected_output.getvalue()
-        if not output.strip():
-            output = "Code erfolgreich ausgeführt (keine print-Ausgabe erzeugt)."
-        return f"[Ausgabe]:\n{output}"
+        exec(code, {}, {})
+        output = redirected.getvalue()
+        return f"[Ausgabe]:\n{output}" if output.strip() else "Erfolgreich ausgeführt."
     except Exception:
-        err = traceback.format_exc()
-        return f"[Ausführungsfehler]:\n{err}\nBitte korrigiere den Code und versuche es erneut."
+        return f"[Fehler]:\n{traceback.format_exc()}"
     finally:
         sys.stdout = old_stdout
 
-# --- Standard-Tools ---
-
 def get_current_time():
-    """Gibt die deutsche Ortszeit zurück."""
     now = datetime.now(ZoneInfo("Europe/Berlin"))
     return f"Es ist {now.strftime('%H:%M')} Uhr am {now.strftime('%d.%m.%Y')}."
 
 def run_protocol(protocol_name: str):
-    """Führt vordefinierte Protokolle aus."""
     if protocol_name.lower() == "fokus":
         return "Protokoll Fokus aktiv: Arbeitsumgebung scharfgestellt, Störquellen minimiert."
     elif protocol_name.lower() == "party":
@@ -68,8 +132,7 @@ def run_protocol(protocol_name: str):
     return f"Protokoll '{protocol_name}' ist nicht hinterlegt, Sir."
 
 def sync_spielerplus():
-    """Prüft SpielerPlus auf angenommene Termine."""
-    return "SpielerPlus-Schnittstelle aktiv: Keine anstehenden Termine gefunden."
+    return "SpielerPlus-Schnittstelle wird zu einem späteren Zeitpunkt konfiguriert."
 
 # --- Schemas für Groq ---
 
@@ -77,15 +140,57 @@ TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
-            "name": "execute_python",
-            "description": "Erlaubt es dir, selbstständig Python-Code zu schreiben und auszuführen. Nutze dies für komplexe Berechnungen, Logikrätsel, Datenverarbeitung oder wenn Sir dich bittet, ein Skript auszuprobieren. Verwende print(), um Ergebnisse sichtbar zu machen.",
+            "name": "list_calendar_events",
+            "description": "Ruft Termine aus Sirs Google Kalender ab. Nutze dies bei Fragen wie 'Was steht an?', 'Welche Termine habe ich diese Woche?' oder 'Habe ich heute Zeit?'.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "code": {
-                        "type": "string",
-                        "description": "Der vollständige, lauffähige Python-Code.",
+                    "days_ahead": {
+                        "type": "integer",
+                        "description": "Anzahl der Tage in die Zukunft (Standard ist 7).",
                     }
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_calendar_event",
+            "description": "Erstellt einen neuen Termin im Google Kalender von Sir. Zeitformat muss ISO-Format sein: YYYY-MM-DDTHH:MM:SS (z.B. '2026-09-15T14:30:00').",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "summary": {
+                        "type": "string",
+                        "description": "Titel des Termins.",
+                    },
+                    "start_time": {
+                        "type": "string",
+                        "description": "Startzeitpunkt im ISO-Format.",
+                    },
+                    "end_time": {
+                        "type": "string",
+                        "description": "Endzeitpunkt im ISO-Format (optional).",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optionale Notiz zum Termin.",
+                    },
+                },
+                "required": ["summary", "start_time"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "execute_python",
+            "description": "Führt dynamischen Python-Code aus.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {"type": "string", "description": "Python-Code."}
                 },
                 "required": ["code"],
             },
@@ -95,18 +200,12 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "save_memory",
-            "description": "Nutze dieses Tool, wenn Sir dir eine persönliche Vorliebe, Regel oder Gewohnheit mitteilt.",
+            "description": "Speichert persönliche Informationen und Vorlieben von Sir.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "topic": {
-                        "type": "string",
-                        "description": "Kategorie (z. B. 'vorliebe', 'regel')",
-                    },
-                    "detail": {
-                        "type": "string",
-                        "description": "Der konkrete Inhalt.",
-                    },
+                    "topic": {"type": "string"},
+                    "detail": {"type": "string"},
                 },
                 "required": ["topic", "detail"],
             },
@@ -124,14 +223,11 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "run_protocol",
-            "description": "Führt ein Jarvis-Sicherheitsprotokoll aus.",
+            "description": "Führt ein Jarvis-Protokoll aus.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "protocol_name": {
-                        "type": "string",
-                        "description": "Name des Protokolls.",
-                    }
+                    "protocol_name": {"type": "string"}
                 },
                 "required": ["protocol_name"],
             },
@@ -141,13 +237,15 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "sync_spielerplus",
-            "description": "Prüft SpielerPlus auf angenommene Termine.",
+            "description": "Prüft SpielerPlus auf Termine.",
             "parameters": {"type": "object", "properties": {}},
         },
     },
 ]
 
 TOOL_MAP = {
+    "list_calendar_events": list_calendar_events,
+    "create_calendar_event": create_calendar_event,
     "execute_python": execute_python,
     "save_memory": save_memory,
     "get_current_time": get_current_time,
