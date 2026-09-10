@@ -143,44 +143,43 @@ async def generate_edge_voice(text: str, voice_name: str, rate: str = "-3%", pit
     return audio_data
 
 def generate_voice_audio(text: str) -> bytes:
-    """Erzeugt Sprache über XTTS-v2 (Klon), Kokoro (Englisch) oder Edge-TTS Fallback."""
+    """Nutzt MeloTTS für flüssiges Deutsch und Kokoro-82M für Englisch mit Edge-TTS als Fallback."""
     lang = detect_language(text)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     hf_token = st.secrets.get("HF_TOKEN")
 
     if lang == "de":
-        sample_path = "jarvis_sample.wav"
-        # Falls die Tonspur auf GitHub hinterlegt ist: XTTS Klon nutzen
-        if os.path.exists(sample_path) and hf_token:
+        # 1. Deutsches neuronales Modell via MeloTTS
+        if hf_token:
             try:
-                xtts_client = Client("coqui/xtts", hf_token=hf_token)
-                result = xtts_client.predict(
-                    prompt=text,
-                    language="de",
-                    audio_file_pth=sample_path,
-                    mic_file_pth=None,
-                    use_mic=False,
-                    cleanup_voice=False,
-                    no_lang_auto_detect=False,
-                    agree=True,
-                    api_name="/predict"
+                melo_client = Client("myshell-ai/MeloTTS", hf_token=hf_token)
+                result = melo_client.predict(
+                    text=text,
+                    language="DE",
+                    speaker="DE-Default",
+                    speed=0.95,
+                    api_name="/synthesize"
                 )
                 with open(result, "rb") as f:
                     return f.read()
             except Exception:
-                return loop.run_until_complete(generate_edge_voice(text, "de-DE-KillianNeural"))
-        else:
-            return loop.run_until_complete(generate_edge_voice(text, "de-DE-KillianNeural"))
+                pass
+        # Fallback auf klares, sonores Edge-TTS
+        return loop.run_until_complete(generate_edge_voice(text, "de-DE-KillianNeural"))
+
     else:
-        # Englisches Original via Kokoro-82M
-        try:
-            hf_client = Client("hexgrad/Kokoro-82M", hf_token=hf_token)
-            result = hf_client.predict(text=text, voice="bm_george")
-            with open(result, "rb") as f:
-                return f.read()
-        except Exception:
-            return loop.run_until_complete(generate_edge_voice(text, "en-GB-RyanNeural"))
+        # 2. Englisches Original via Kokoro-82M
+        if hf_token:
+            try:
+                hf_client = Client("hexgrad/Kokoro-82M", hf_token=hf_token)
+                result = hf_client.predict(text=text, voice="bm_george")
+                with open(result, "rb") as f:
+                    return f.read()
+            except Exception:
+                pass
+        # Fallback auf britisches Edge-TTS
+        return loop.run_until_complete(generate_edge_voice(text, "en-GB-RyanNeural"))
 
 def process_query(user_text, is_voice=False):
     if st.session_state.sleep_mode:
