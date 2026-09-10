@@ -36,6 +36,10 @@ if available_models:
 else:
     st.error("Keine verfügbaren Modelle für diesen API-Key gefunden.")
     st.stop()
+# Reset-Button in der Seitenleiste
+if st.sidebar.button("Chat zurücksetzen"):
+    st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    st.rerun()
 
 SYSTEM_PROMPT = """
 Du bist J.A.R.V.I.S., die hochentwickelte KI von Sir.
