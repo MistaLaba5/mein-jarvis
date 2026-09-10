@@ -28,14 +28,13 @@ st.markdown("""
         font-family: 'Rajdhani', sans-serif;
     }
 
-    /* LINKE SIDEBAR: Reines Styling ohne Blockade des Einklapp-Mechanismus */
+    /* LINKE SIDEBAR: Styling ohne den nativen Einklapp-Mechanismus zu blockieren */
     section[data-testid="stSidebar"] {
         background: rgba(3, 14, 28, 0.98) !important;
         border-right: 1px solid rgba(0, 240, 255, 0.35) !important;
         box-shadow: 10px 0 35px rgba(0, 0, 0, 0.85) !important;
     }
 
-    /* Native Einklapp-Pfeile hervorheben */
     [data-testid="stSidebarCollapseButton"],
     [data-testid="stSidebarCollapsedControl"] {
         color: #00f0ff !important;
@@ -139,7 +138,7 @@ def get_available_models():
         models_data = client.models.list()
         chat_models = [m.id for m in models_data.data if "whisper" not in m.id.lower()]
         return sorted(chat_models)
-    except Exception as e:
+    except Exception:
         return []
 
 available_models = get_available_models()
@@ -153,7 +152,11 @@ def build_system_prompt():
 2. SPRACHE: Antworte IMMER exakt in der Sprache, in der Sir dich anspricht.
 3. Sei präzise, loyal, trocken-humorvoll und halte dich extrem kurz (1-2 Sätze).
 4. Gib niemals interne Denkprozesse oder Meta-Kommentare aus.
-5. Wenn Sir dir befiehlt schlafen zu gehen, rufe SOFORT 'run_protocol' mit protocol_name='ruhemodus' auf.
+5. PROTOKOLLE & ROUTINEN:
+   - Wenn Sir dir befiehlt, ein Protokoll zu erstellen (z. B. "Erstelle Protokoll Fokus..."), rufe 'create_protocol' auf.
+   - Wenn Sir dir befiehlt, ein Protokoll auszuführen (z. B. "Protokoll Fokus aktivieren"), rufe 'run_protocol' auf und führe die im Protokoll definierten Aktionen direkt in deiner Antwort aus.
+   - Wenn Sir wissen will, welche Protokolle existieren, rufe 'list_protocols' auf.
+   - Wenn Sir schlafen gehen will oder leise sein befiehlt, rufe 'run_protocol' mit protocol_name='ruhemodus' auf.
 6. Wenn Sir dir Fakten über sich mitteilt, rufe sofort 'save_memory' auf.
 
 Dauerhaftes Gedächtnis über Sir:
@@ -177,13 +180,12 @@ if "sleep_mode" not in st.session_state:
 if "show_protocol" not in st.session_state:
     st.session_state.show_protocol = False
 
-# --- LINKE SIDEBAR (Mit sichtbarem Schließen-Button) ---
+# --- LINKE SIDEBAR ---
 with st.sidebar:
     col_sb_title, col_sb_close = st.columns([0.8, 0.2])
     with col_sb_title:
         st.markdown("<h3 style='font-family: Orbitron; color: #00f0ff; margin:0;'>⚙️ SYSTEM CONTROL</h3>", unsafe_allow_html=True)
     with col_sb_close:
-        # Button, der per Klick die native Sidebar zuverlässig einklappt
         components.html("""
         <button onclick="
             const btn = window.parent.document.querySelector('[data-testid=\\'stSidebarCollapseButton\\'] button') || 
@@ -429,7 +431,6 @@ with col_center:
     hud_template = """
     <div style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%;">
         
-        <!-- Winziges Mikrofon-Icon oben rechts -->
         <div style="position: absolute; top: 0px; right: 20px; z-index: 10;">
             <button id="btn-hud-mic" onclick="toggleHudMic()" style="
                 background: transparent;
@@ -449,7 +450,6 @@ with col_center:
             </button>
         </div>
 
-        <!-- Arc Reactor Hologramm (Ohne Text) -->
         <div id="reactor-wrapper" onclick="triggerListenDirectly()" style="cursor: pointer; position: relative; width: 340px; height: 340px; display: flex; align-items: center; justify-content: center;" title="Klicken für Sofortbefehl">
             <svg id="arc-reactor" viewBox="0 0 400 400" width="340" height="340">
                 <line x1="200" y1="10" x2="200" y2="35" stroke="var(--hud-stroke, #00f0ff)" stroke-width="2" opacity="0.6" />
@@ -599,7 +599,6 @@ with col_center:
     if (isSleep) applyState('sleep');
     else applyState('standby');
 
-    // --- Web Audio API Waveform ---
     let audioCtx = null;
     let animFrame = null;
 
@@ -672,7 +671,6 @@ with col_center:
         }
     }
 
-    // Follow-Up Zuhören nach der Antwort (7 Sekunden)
     let followUpTimer = null;
     function startFollowUp() {
         if (isSleep || isMuted) {
@@ -695,7 +693,6 @@ with col_center:
         }, 7000);
     }
 
-    // Spracherkennung
     let rec = null;
     let isListeningCommand = false;
     let silenceTimeout = null;
