@@ -109,7 +109,8 @@ with st.sidebar:
 
     st.divider()
     if available_models:
-        default_idx = available_models.index("openai/gpt-oss-120b") if "openai/gpt-oss-120b" in available_models else 0
+        target_model = "llama-3.3-70b-versatile"
+        default_idx = available_models.index(target_model) if target_model in available_models else 0
         MODEL_NAME = st.selectbox("Aktives Modell:", available_models, index=default_idx)
     else:
         st.error("Keine Modelle gefunden.")
@@ -150,7 +151,6 @@ def generate_voice_audio(text: str) -> bytes:
     hf_token = st.secrets.get("HF_TOKEN")
 
     if lang == "de":
-        # 1. Deutsches neuronales Modell via MeloTTS
         if hf_token:
             try:
                 melo_client = Client("myshell-ai/MeloTTS", hf_token=hf_token)
@@ -165,11 +165,9 @@ def generate_voice_audio(text: str) -> bytes:
                     return f.read()
             except Exception:
                 pass
-        # Fallback auf klares, sonores Edge-TTS
         return loop.run_until_complete(generate_edge_voice(text, "de-DE-KillianNeural"))
 
     else:
-        # 2. Englisches Original via Kokoro-82M
         if hf_token:
             try:
                 hf_client = Client("hexgrad/Kokoro-82M", hf_token=hf_token)
@@ -178,7 +176,6 @@ def generate_voice_audio(text: str) -> bytes:
                     return f.read()
             except Exception:
                 pass
-        # Fallback auf britisches Edge-TTS
         return loop.run_until_complete(generate_edge_voice(text, "en-GB-RyanNeural"))
 
 def process_query(user_text, is_voice=False):
@@ -247,6 +244,10 @@ def process_query(user_text, is_voice=False):
             reply = second_response.choices[0].message.content
         else:
             reply = response_message.content
+
+        # Denkprozesse herausfiltern
+        if "</think>" in reply:
+            reply = reply.split("</think>")[-1].strip()
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
         save_chat_history(st.session_state.messages)
