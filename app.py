@@ -56,10 +56,11 @@ def build_system_prompt():
     mem_text = "\n".join([f"- {k}: {v}" for k, v in memories.items()]) if memories else "Keine Einträge vorhanden."
     
     return f"""Du bist J.A.R.V.I.S., die hochentwickelte KI von Sir.
-1. Sprich den Nutzer stets diskret und respektvoll mit 'Sir' an.
-2. Sei präzise, loyal, trocken-humorvoll und halte dich extrem kurz (1-2 Sätze).
-3. Wenn Sir dir befiehlt schlafen zu gehen, leise zu sein oder den Ruhemodus zu aktivieren, rufe SOFORT 'run_protocol' mit protocol_name='ruhemodus' auf.
-4. Wenn Sir dir Fakten über sich mitteilt, rufe sofort 'save_memory' auf.
+1. Sprich den Nutzer stets diskret und loyal mit 'Sir' an.
+2. SPRACHE: Antworte IMMER exakt in der Sprache, in der Sir dich anspricht. Wenn Sir Englisch spricht, antworte auf Englisch. Wenn Sir Deutsch spricht, antworte auf Deutsch.
+3. Sei präzise, trocken-humorvoll und halte dich extrem kurz (1-2 Sätze).
+4. Wenn Sir dir befiehlt schlafen zu gehen, leise zu sein oder den Ruhemodus zu aktivieren, rufe SOFORT 'run_protocol' mit protocol_name='ruhemodus' auf.
+5. Wenn Sir dir Fakten über sich mitteilt, rufe sofort 'save_memory' auf.
 
 Dauerhaftes Gedächtnis über Sir:
 {mem_text}
@@ -94,14 +95,8 @@ with st.sidebar:
         enable_wakeword = st.toggle("🎤 'Hey Jarvis' lauschen", value=False)
         enable_tts = st.toggle("🔊 Sprachausgabe erlauben", value=False)
 
-    voice_option = st.selectbox(
-        "Jarvis-Stimme:",
-        [
-            "Kokoro-82M (Original Jarvis - BM George)",
-            "Deutsch (Conrad - Edge)",
-            "Englisch (Ryan - Edge)"
-        ]
-    )
+    input_lang = st.selectbox("Mikrofon-Sprache:", ["Deutsch (de-DE)", "English (en-US)"])
+    rec_lang_code = "de-DE" if "Deutsch" in input_lang else "en-US"
 
     st.divider()
     st.header("Langzeitgedächtnis")
@@ -128,8 +123,20 @@ with st.sidebar:
         st.session_state.sleep_mode = False
         st.rerun()
 
-async def generate_edge_fallback(text: str, voice_name: str) -> bytes:
-    communicate = edge_tts.Communicate(text, voice_name)
+def detect_language(text: str) -> str:
+    """Erkennt schnell, ob der generierte Text Deutsch oder Englisch ist."""
+    lower = text.lower()
+    if any(c in lower for c in "äöüß"):
+        return "de"
+    german_markers = {"der", "die", "das", "und", "ist", "nicht", "ich", "wir", "habe", "uhr", "termin", "gerne"}
+    english_markers = {"the", "and", "is", "not", "have", "you", "will", "sir", "all", "ready", "scheduled"}
+    words = set(lower.split())
+    de_score = len(words & german_markers)
+    en_score = len(words & english_markers)
+    return "en" if en_score > de_score else "de"
+
+async def generate_edge_voice(text: str, voice_name: str, rate: str = "-4%", pitch: str = "-5Hz") -> bytes:
+    communicate = edge_tts.Communicate(text=text, voice=voice_name, rate=rate, pitch=pitch)
     audio_data = b""
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":
@@ -137,8 +144,13 @@ async def generate_edge_fallback(text: str, voice_name: str) -> bytes:
     return audio_data
 
 def generate_voice_audio(text: str) -> bytes:
-    """Erzeugt Sprache via Kokoro-82M oder Edge-TTS Fallback."""
-    if "Kokoro" in voice_option:
+    """Wählt automatisch die passende Stimme für Deutsch oder Englisch."""
+    lang = detect_language(text)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    if lang == "en":
+        # Echtes britisches Kokoro-Modell für englische Antworten
         try:
             hf_token = st.secrets.get("HF_TOKEN")
             hf_client = Client("hexgrad/Kokoro-82M", hf_token=hf_token)
@@ -147,14 +159,10 @@ def generate_voice_audio(text: str) -> bytes:
                 return f.read()
         except Exception:
             # Fallback falls Hugging Face Space schläft
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            return loop.run_until_complete(generate_edge_fallback(text, "en-GB-RyanNeural"))
+            return loop.run_until_complete(generate_edge_voice(text, "en-GB-RyanNeural"))
     else:
-        voice = "de-DE-ConradNeural" if "Deutsch" in voice_option else "en-GB-RyanNeural"
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        return loop.run_until_complete(generate_edge_fallback(text, voice))
+        # Perfekt artikuliertes, tiefes Deutsch ohne englischen Akzent
+        return loop.run_until_complete(generate_edge_voice(text, "de-DE-KillianNeural", rate="-3%", pitch="-4Hz"))
 
 def process_query(user_text, is_voice=False):
     if st.session_state.sleep_mode:
@@ -280,13 +288,14 @@ hud_html = f"""
 const isSleep = {str(is_sleep).lower()};
 const active = {str(enable_wakeword).lower()} && !isSleep;
 const audioB64 = "{audio_payload}";
+const targetLang = "{rec_lang_code}";
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 if (SpeechRecognition) {{
     const rec = new SpeechRecognition();
     rec.continuous = true;
     rec.interimResults = true;
-    rec.lang = 'de-DE';
+    rec.lang = targetLang;
 
     const dot = document.getElementById('hud-dot');
     const status = document.getElementById('hud-status');
