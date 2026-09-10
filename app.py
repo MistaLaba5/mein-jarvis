@@ -8,7 +8,7 @@ st.set_page_config(page_title="J.A.R.V.I.S.", page_icon="🤖", layout="centered
 st.title("J.A.R.V.I.S. // Online Core")
 st.caption("Systemstatus: Online. Bereit für Ihre Anweisungen, Sir.")
 
-# Groq API-Key sicher und ohne versehentliche Leerzeichen laden
+# API-Key laden
 raw_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY", "")
 GROQ_API_KEY = raw_key.strip() if raw_key else ""
 
@@ -16,13 +16,28 @@ if not GROQ_API_KEY:
     st.error("API-Key fehlt! Bitte trage deinen GROQ_API_KEY in den Streamlit Secrets ein.")
     st.stop()
 
-# Explizite Übergabe von base_url verhindert den 404-Fehler
-client = Groq(
-    api_key=GROQ_API_KEY,
-    base_url="https://api.groq.com"
-)
+client = Groq(api_key=GROQ_API_KEY)
 
-MODEL_NAME = "mixtral-8x7b-32768"
+# 1. Verfügbare Modelle live von Groq abfragen
+@st.cache_data(ttl=3600)
+def get_available_models():
+    try:
+        models_data = client.models.list()
+        # Nur Chat-Modelle filtern (Whisper STT ausschließen)
+        chat_models = [m.id for m in models_data.data if "whisper" not in m.id.lower()]
+        return sorted(chat_models)
+    except Exception as e:
+        st.error(f"Konnte Modelle nicht laden: {e}")
+        return []
+
+available_models = get_available_models()
+
+# Dropdown zur Auswahl des aktiven Modells
+if available_models:
+    MODEL_NAME = st.sidebar.selectbox("Aktives Groq-Modell:", available_models)
+else:
+    st.error("Keine verfügbaren Modelle für diesen API-Key gefunden.")
+    st.stop()
 
 SYSTEM_PROMPT = """
 Du bist J.A.R.V.I.S., die hochentwickelte KI von Sir.
@@ -87,7 +102,7 @@ def process_query(user_text):
             st.write(reply)
 
     except Exception as e:
-        st.error(f"Fehler bei Groq-Anfrage: {e}")
+        st.error(f"Fehler bei Groq-Anfrage ({MODEL_NAME}): {e}")
 
 col1, col2 = st.columns([4, 1])
 with col1:
