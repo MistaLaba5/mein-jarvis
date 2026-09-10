@@ -2,7 +2,6 @@ import os
 import json
 import asyncio
 import streamlit as st
-import streamlit.components.v1 as components
 from groq import Groq
 import edge_tts
 from jarvis_tools import TOOLS_SCHEMA, TOOL_MAP
@@ -11,7 +10,7 @@ st.set_page_config(page_title="J.A.R.V.I.S.", page_icon="🤖", layout="centered
 st.title("J.A.R.V.I.S.")
 st.caption("Systemstatus: Online. Bereit für Ihre Anweisungen, Sir.")
 
-# Groq API-Key laden
+# API-Key laden
 raw_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY", "")
 GROQ_API_KEY = raw_key.strip() if raw_key else ""
 
@@ -40,10 +39,9 @@ Du bist J.A.R.V.I.S., die hochentwickelte KI von Sir.
 3. Wenn der Nutzer nach Uhrzeit, Protokollen oder SpielerPlus fragt, rufe sofort die passenden Tools auf.
 """
 
-# Seitenleiste
+# Seitenleiste: Einstellungen
 with st.sidebar:
-    st.header("Audio & Sensoren")
-    enable_wakeword = st.toggle("🎤 Live-Zuhören aktivieren", value=False)
+    st.header("Audio & Modell")
     enable_tts = st.toggle("🔊 Sprachausgabe aktiv", value=True)
     voice_option = st.selectbox(
         "Jarvis-Stimme:",
@@ -51,7 +49,6 @@ with st.sidebar:
     )
     
     st.divider()
-    st.header("Modell")
     if available_models:
         default_idx = available_models.index("openai/gpt-oss-120b") if "openai/gpt-oss-120b" in available_models else 0
         MODEL_NAME = st.selectbox("Aktives Modell:", available_models, index=default_idx)
@@ -61,12 +58,14 @@ with st.sidebar:
 
     if st.button("Chat zurücksetzen"):
         st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        if "last_processed_audio" in st.session_state:
+            del st.session_state["last_processed_audio"]
         st.rerun()
 
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-# Chat-Verlauf anzeigen
+# Chat-Verlauf rendern
 for msg in st.session_state.messages[1:]:
     role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else None)
     content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
@@ -162,110 +161,45 @@ def process_query(user_text):
     except Exception as e:
         st.error(f"Fehler bei Groq-Anfrage ({MODEL_NAME}): {e}")
 
-# Live-HUD und Auto-Execution Komponente
-hud_html = f"""
-<div id="jarvis-hud" style="
+# HUD-Statusleiste
+st.markdown("""
+<div style="
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 16px;
-    margin-bottom: 15px;
-    border-radius: 8px;
-    background: rgba(20, 24, 33, 0.85);
-    border: 1px solid #2d3748;
-    color: #e2e8f0;
-    font-family: monospace;
+    gap: 10px;
+    padding: 8px 14px;
+    margin-bottom: 12px;
+    border-radius: 6px;
+    background: #111827;
+    border: 1px solid #1f2937;
+    color: #94a3b8;
     font-size: 13px;
 ">
-    <div id="hud-pulse" style="
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        background-color: {'#10b981' if enable_wakeword else '#64748b'};
-        box-shadow: 0 0 8px {'#10b981' if enable_wakeword else 'transparent'};
-    "></div>
-    <span id="hud-status">{'Bereit – Lauscht im Hintergrund...' if enable_wakeword else 'Mikrofon inaktiv (im Seitenmenü aktivieren)'}</span>
-    <span id="hud-live-text" style="margin-left: auto; color: #38bdf8; font-style: italic;"></span>
+    <div style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px #10b981;"></div>
+    <span>Audio-Interface bereit. Sprechen oder tippen.</span>
 </div>
+""", unsafe_allow_html=True)
 
-<script>
-const active = {str(enable_wakeword).lower()};
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+# 1. Spracheingabe: Streamlits nativer Audio-Recorder
+audio_file = st.audio_input("Befehl per Sprache aufnehmen")
 
-if (active && SpeechRecognition) {{
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'de-DE';
+if audio_file is not None:
+    audio_bytes = audio_file.read()
+    # Verhindert doppeltes Verarbeiten desselben Audios beim Re-Render
+    if st.session_state.get("last_processed_audio") != audio_bytes:
+        st.session_state["last_processed_audio"] = audio_bytes
+        with st.spinner("Transkribiere Sprache..."):
+            try:
+                transcription = client.audio.transcriptions.create(
+                    file=("voice.wav", audio_bytes),
+                    model="whisper-large-v3"
+                ).text
+                if transcription.strip():
+                    process_query(transcription)
+            except Exception as e:
+                st.error(f"Fehler bei Audio-Verarbeitung: {e}")
 
-    const pulse = document.getElementById('hud-pulse');
-    const status = document.getElementById('hud-status');
-    const liveText = document.getElementById('hud-live-text');
-
-    let silenceTimer = null;
-    let accumulatedText = "";
-
-    recognition.onresult = function(event) {{
-        let interimTranscript = '';
-        let finalTranscript = '';
-
-        for (let i = event.resultIndex; i < event.results.length; ++i) {{
-            if (event.results[i].isFinal) {{
-                finalTranscript += event.results[i][0].transcript;
-            }} else {{
-                interimTranscript += event.results[i][0].transcript;
-            }}
-        }}
-
-        const currentText = (finalTranscript || interimTranscript).trim();
-
-        if (currentText.length > 0) {{
-            pulse.style.backgroundColor = '#38bdf8';
-            pulse.style.boxShadow = '0 0 12px #38bdf8';
-            status.innerText = "Hört zu...";
-            liveText.innerText = '"' + currentText + '"';
-            accumulatedText = currentText;
-
-            // Timer zurücksetzen: Nach 1.2s Sprechpause wird automatisch gesendet
-            clearTimeout(silenceTimer);
-            silenceTimer = setTimeout(() => {{
-                if (accumulatedText.length > 0) {{
-                    const chatInput = window.parent.document.querySelector('textarea[data-testid="stChatInputTextArea"]');
-                    if (chatInput) {{
-                        chatInput.value = accumulatedText;
-                        chatInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                        const enterEvent = new KeyboardEvent('keydown', {{
-                            bubbles: true, cancelable: true, keyCode: 13, key: 'Enter'
-                        }});
-                        chatInput.dispatchEvent(enterEvent);
-                    }}
-                    accumulatedText = "";
-                    liveText.innerText = "";
-                    status.innerText = "Befehl wird verarbeitet...";
-                }}
-            }}, 1200);
-        }}
-    }};
-
-    recognition.onend = function() {{
-        if (active) {{
-            try {{ recognition.start(); }} catch(e) {{}}
-        }}
-    }};
-
-    try {{
-        recognition.start();
-    }} catch(e) {{
-        status.innerText = "Mikrofon-Zugriff verweigert oder belegt.";
-    }}
-}}
-</script>
-"""
-
-# HUD ganz oben anzeigen
-components.html(hud_html, height=55)
-
-# Text-Eingabefeld
+# 2. Texteingabe
 chat_text = st.chat_input("Befehl eingeben, Sir...")
 if chat_text:
     process_query(chat_text)
