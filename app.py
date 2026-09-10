@@ -40,10 +40,16 @@ Du bist J.A.R.V.I.S., die hochentwickelte KI von Sir.
 3. Wenn der Nutzer nach Uhrzeit, Protokollen oder SpielerPlus fragt, rufe sofort die passenden Tools auf.
 """
 
-# Seitenleiste: Standardmäßig AUS
+# Session States initialisieren
+if "messages" not in st.session_state:
+    st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+if "follow_up_active" not in st.session_state:
+    st.session_state.follow_up_active = False
+
+# Seitenleiste: Einstellungen
 with st.sidebar:
     st.header("Audio-Einstellungen")
-    # 1. Beide Schalter standardmäßig auf False (AUS)
     enable_wakeword = st.toggle("🎤 'Hey Jarvis' lauschen", value=False)
     enable_tts = st.toggle("🔊 Sprachausgabe erlauben", value=False)
     voice_option = st.selectbox("Jarvis-Stimme:", ["Deutsch (Conrad)", "Englisch (Ryan)"])
@@ -58,12 +64,8 @@ with st.sidebar:
 
     if st.button("Chat zurücksetzen"):
         st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        if "pending_voice_cmd" in st.session_state:
-            del st.session_state["pending_voice_cmd"]
+        st.session_state.follow_up_active = False
         st.rerun()
-
-if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
 # Chat-Verlauf anzeigen
 for msg in st.session_state.messages[1:]:
@@ -89,7 +91,7 @@ def speak_text(text: str):
         audio_bytes = loop.run_until_complete(generate_edge_speech(text, voice))
         st.audio(audio_bytes, format="audio/mp3", autoplay=True)
     except Exception as e:
-        st.caption(f"Audioausgabe temporär nicht verfügbar: {e}")
+        st.caption(f"Audioausgabe nicht verfügbar: {e}")
 
 def process_query(user_text, is_voice=False):
     st.session_state.messages.append({"role": "user", "content": user_text})
@@ -155,14 +157,21 @@ def process_query(user_text, is_voice=False):
         with st.chat_message("assistant"):
             st.write(reply)
 
-        # SPRACHAUSGABE NUR WENN: Per Sprache gefragt UND TTS aktiviert ist!
+        # Sprachausgabe und Follow-up nur bei Spracheingabe
         if is_voice and enable_tts and reply:
             speak_text(reply)
+            st.session_state.follow_up_active = True
+        else:
+            st.session_state.follow_up_active = False
 
     except Exception as e:
         st.error(f"Fehler bei Groq-Anfrage ({MODEL_NAME}): {e}")
 
-# HUD & Robuster Wake-Word Listener
+# Prüfen, ob der Follow-up Modus getriggert werden soll
+start_follow_up = st.session_state.follow_up_active
+# Nach der Auswertung zurücksetzen, damit es nicht endlos läuft
+st.session_state.follow_up_active = False
+
 hud_html = f"""
 <div id="jarvis-hud" style="
     display: flex;
@@ -190,6 +199,7 @@ hud_html = f"""
 
 <script>
 const active = {str(enable_wakeword).lower()};
+const shouldFollowUp = {str(start_follow_up).lower()};
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 if (active && SpeechRecognition) {{
@@ -204,9 +214,53 @@ if (active && SpeechRecognition) {{
 
     let isListeningCommand = false;
     let silenceTimeout = null;
+    let followUpTimer = null;
     let fullCommand = "";
 
+    function setStatusStandby() {{
+        isListeningCommand = false;
+        dot.style.backgroundColor = '#10b981';
+        dot.style.boxShadow = '0 0 8px #10b981';
+        status.innerText = 'Warte auf "Hey Jarvis"...';
+        hudText.innerText = "";
+    }}
+
+    function startFollowUpWindow() {{
+        isListeningCommand = true;
+        dot.style.backgroundColor = '#38bdf8';
+        dot.style.boxShadow = '0 0 12px #38bdf8';
+        status.innerText = "Im Gespräch: Höre zu (ohne Wake-Word)...";
+
+        // Nach 6 Sekunden Stille schaltet sich das aktive Zuhören ab
+        clearTimeout(followUpTimer);
+        followUpTimer = setTimeout(() => {{
+            if (isListeningCommand && fullCommand.trim().length === 0) {{
+                setStatusStandby();
+            }}
+        }}, 6000);
+    }}
+
+    // Prüfen, ob Jarvis gerade noch über Audio spricht
+    const parentDoc = window.parent.document;
+    const audios = parentDoc.querySelectorAll('audio');
+    const lastAudio = audios.length > 0 ? audios[audios.length - 1] : null;
+
+    if (shouldFollowUp) {{
+        if (lastAudio && !lastAudio.ended && !lastAudio.paused) {{
+            // Warten bis Sprachausgabe beendet ist, bevor zugehört wird
+            status.innerText = "Jarvis antwortet...";
+            lastAudio.onended = () => {{
+                startFollowUpWindow();
+            }};
+        }} else {{
+            startFollowUpWindow();
+        }}
+    }}
+
     rec.onresult = (event) => {{
+        // Falls Jarvis noch spricht: ignorieren
+        if (lastAudio && !lastAudio.ended && !lastAudio.paused) return;
+
         let interim = "";
         let final = "";
 
@@ -218,28 +272,28 @@ if (active && SpeechRecognition) {{
         let raw = (final || interim).trim();
         let lower = raw.toLowerCase();
 
-        // 1. Wake-Word Erkennung
+        // 1. Wake-Word Erkennung (falls nicht schon im Gespräch)
         if (!isListeningCommand && (lower.includes("hey jarvis") || lower.includes("jarvis"))) {{
             isListeningCommand = true;
             dot.style.backgroundColor = '#38bdf8';
             dot.style.boxShadow = '0 0 12px #38bdf8';
             status.innerText = "Höre zu, Sir...";
-            // Wake-Word aus dem Text entfernen
             raw = raw.replace(/hey jarvis/gi, "").replace(/jarvis/gi, "").trim();
         }}
 
-        // 2. Befehl aufzeichnen nach Wake-Word
+        // 2. Befehl erfassen
         if (isListeningCommand) {{
+            // Follow-up Timer stoppen, da der Nutzer spricht
+            clearTimeout(followUpTimer);
+
             if (raw.length > 0) {{
                 fullCommand = raw;
                 hudText.innerText = '"' + fullCommand + '"';
 
-                // Automatisch absenden nach 1 Sekunde Sprechpause
+                // Nach 1.1s Sprechpause absenden
                 clearTimeout(silenceTimeout);
                 silenceTimeout = setTimeout(() => {{
                     if (fullCommand.trim().length > 0) {{
-                        // Streamlit Input-Element suchen und Event triggern
-                        const parentDoc = window.parent.document;
                         const ta = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
                         if (ta) {{
                             const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
@@ -260,12 +314,6 @@ if (active && SpeechRecognition) {{
                         status.innerText = "Befehl übermittelt...";
                         fullCommand = "";
                         isListeningCommand = false;
-                        setTimeout(() => {{
-                            dot.style.backgroundColor = '#10b981';
-                            dot.style.boxShadow = '0 0 8px #10b981';
-                            status.innerText = 'Warte auf "Hey Jarvis"...';
-                            hudText.innerText = "";
-                        }}, 2000);
                     }}
                 }}, 1100);
             }}
@@ -285,14 +333,13 @@ if (active && SpeechRecognition) {{
 
 components.html(hud_html, height=52)
 
-# Chat-Eingabe (Nimmt getippte Befehle oder automatische Wake-Word-Befehle an)
+# Chat-Eingabe
 chat_text = st.chat_input("Befehl eingeben, Sir...")
 
 if chat_text:
-    # Erkennen, ob der Befehl aus dem Mikrofon stammt
     if chat_text.startswith("[VOICE]"):
         clean_text = chat_text.replace("[VOICE]", "").strip()
         process_query(clean_text, is_voice=True)
     else:
-        # Getippter Chat -> Antwort bleibt stumm (nur Text)
+        # Getippte Frage: Antwort erfolgt rein textbasiert
         process_query(chat_text, is_voice=False)
