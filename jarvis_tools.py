@@ -5,10 +5,10 @@ from zoneinfo import ZoneInfo
 
 MEMORY_FILE = "jarvis_memory.json"
 
-# --- Speicher-Hilfsfunktionen ---
+# --- Gedächtnis-Funktionen ---
 
 def get_all_memories() -> dict:
-    """Liest alle dauerhaft gespeicherten Notizen und Fakten aus."""
+    """Liest alle gespeicherten Notizen aus."""
     if not os.path.exists(MEMORY_FILE):
         return {}
     try:
@@ -18,7 +18,7 @@ def get_all_memories() -> dict:
         return {}
 
 def save_memory(topic: str, detail: str):
-    """Speichert eine neue Information, Vorliebe oder Regel über Sir dauerhaft ab."""
+    """Speichert eine Information über Sir dauerhaft ab."""
     memories = get_all_memories()
     memories[topic] = detail
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
@@ -57,7 +57,7 @@ TOOLS_SCHEMA = [
                 "properties": {
                     "topic": {
                         "type": "string",
-                        "description": "Kategorie oder Stichwort (z. B. 'name', 'kaffee_vorliebe', 'ansprechstil', 'musik')",
+                        "description": "Kategorie oder Stichwort (z. B. 'kaffee_vorliebe', 'spitzname', 'musik')",
                     },
                     "detail": {
                         "type": "string",
